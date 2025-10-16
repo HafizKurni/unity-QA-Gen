@@ -133,6 +133,11 @@
                 onclick="loadQuiz('programmer')">
                 Game Programmer
             </button>
+            <button id="mode-saved"
+                class="mode-button px-4 py-2 text-sm font-semibold rounded-lg text-gray-700 bg-gray-100"
+                onclick="loadQuiz('saved')">
+                💾 My Saved Quizzes
+            </button>
         </div>
 
         <h2 id="quizTitle" class="text-2xl font-bold text-gray-800 mb-2"></h2>
@@ -153,6 +158,12 @@
         <div id="quizContainer" class="mt-8 space-y-8">
             <!-- Questions will be dynamically inserted here -->
         </div>
+        
+        <!-- Saved Quizzes List Container (New) -->
+        <div id="savedQuizzesList" class="mt-8 space-y-4 hidden">
+            <!-- Saved quiz list will be inserted here -->
+        </div>
+
 
         <!-- Submission and Score -->
         <div id="submissionContainer" class="mt-8 pt-6 border-t border-gray-200 hidden">
@@ -188,7 +199,8 @@
         // --- FIREBASE IMPORTS (UPDATED TO V12.4.0) ---
         import { initializeApp } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-auth.js";
-        import { getFirestore, addDoc, collection, serverTimestamp, setLogLevel } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-firestore.js";
+        // NOTE: Importing 'query' and 'getDocs' for loading saved quizzes
+        import { getFirestore, addDoc, collection, serverTimestamp, setLogLevel, query, getDocs, orderBy } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-firestore.js"; 
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-analytics.js";
         
         // setLogLevel('debug'); // Uncomment for Firestore debugging
@@ -254,7 +266,12 @@
                 const app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
-                analytics = getAnalytics(app); // Initialize Analytics
+                // Analytics initialization is optional for core functionality
+                try {
+                    analytics = getAnalytics(app); 
+                } catch(e) {
+                    console.warn("Analytics failed to initialize. Skipping.");
+                }
                 
                 // 1. Authenticate (Always sign in anonymously if no token is provided)
                 if (initialAuthToken) {
@@ -281,6 +298,104 @@
             }
         }
         
+        /**
+         * Loads the list of saved quizzes from Firestore for the current user.
+         */
+        window.loadSavedQuizzes = async function() {
+            if (!isFirebaseReady) {
+                document.getElementById('savedQuizzesList').innerHTML = `<p class="text-red-600 font-semibold">Error: Database not ready. Please wait a moment.</p>`;
+                return;
+            }
+
+            const listContainer = document.getElementById('savedQuizzesList');
+            const collectionPath = `artifacts/${appId}/users/${userId}/saved_quizzes`;
+            listContainer.innerHTML = `<p class="text-indigo-600 font-semibold flex items-center">
+                <span class="dot-pulse mr-2" style="position: relative; left:0; background-color: #6366f1;"></span>
+                Fetching your saved quizzes...</p>`;
+            
+            try {
+                // IMPORTANT: Removed orderBy() to avoid index requirement error, sort in client.
+                const q = query(collection(db, collectionPath));
+                const querySnapshot = await getDocs(q);
+                
+                let savedQuizzes = [];
+                querySnapshot.forEach(doc => {
+                    savedQuizzes.push({ id: doc.id, ...doc.data() });
+                });
+
+                // Sort by timestamp (newest first) in client-side JS
+                savedQuizzes.sort((a, b) => {
+                    const timeA = a.timestamp ? a.timestamp.toDate().getTime() : 0;
+                    const timeB = b.timestamp ? b.timestamp.toDate().getTime() : 0;
+                    return timeB - timeA;
+                });
+
+
+                if (savedQuizzes.length === 0) {
+                    listContainer.innerHTML = `<p class="text-gray-600 p-4 border rounded-lg bg-gray-50">You have no saved AI quizzes yet. Generate a quiz using one of the tabs above and click 'Save Quiz'.</p>`;
+                    return;
+                }
+
+                listContainer.innerHTML = `
+                    <h3 class="text-xl font-bold text-gray-800 mb-4">Your Saved Quizzes (${savedQuizzes.length})</h3>
+                    <div class="space-y-3">
+                        ${savedQuizzes.map(quiz => {
+                            const date = quiz.timestamp ? quiz.timestamp.toDate().toLocaleString() : 'N/A';
+                            const categoryDisplay = quiz.category.toUpperCase();
+                            return `
+                                <div class="p-4 bg-white border border-gray-200 rounded-lg shadow-sm flex justify-between items-center transition hover:shadow-md">
+                                    <div>
+                                        <p class="font-semibold text-indigo-700">${categoryDisplay} Quiz</p>
+                                        <p class="text-sm text-gray-500">${quiz.questionCount} Questions | Saved: ${date}</p>
+                                    </div>
+                                    <button onclick="loadFromSaved('${quiz.id}', ${JSON.stringify(quiz.quizData).replace(/'/g, "\\'")}, '${quiz.category}')" 
+                                            class="px-4 py-2 text-sm bg-green-500 text-white rounded-lg hover:bg-green-600 transition">
+                                        Load Quiz
+                                    </button>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                `;
+
+            } catch (e) {
+                console.error("Error fetching saved quizzes:", e);
+                listContainer.innerHTML = `<p class="text-red-600 font-semibold p-4 border border-red-300 rounded-lg bg-red-50">
+                    Failed to load quizzes. Please check your console and ensure your Firestore Security Rules allow read access for your user ID.</p>`;
+            }
+        }
+        
+        /**
+         * Loads a quiz from the list of saved quizzes and renders it to the screen.
+         * @param {string} quizId The document ID of the saved quiz.
+         * @param {Array} data The quiz data array.
+         * @param {string} category The category string.
+         */
+        window.loadFromSaved = function(quizId, data, category) {
+            // Re-parse the data, as it was stringified for the onclick attribute
+            try {
+                // Note: The data passed to loadFromSaved is already correctly parsed JSON in the JS environment due to the stringify/replace sequence in the map function.
+                // Reassigning quizData from the passed data.
+                quizData = data; 
+                currentMode = `Saved: ${category}`;
+                
+                // Update UI titles for the loaded quiz
+                document.getElementById('quizTitle').textContent = `Loaded Quiz: ${category.toUpperCase()}`;
+                document.getElementById('quizDescription').textContent = `Quiz ID: ${quizId}. Questions ready to take.`;
+                
+                // Hide the list and render the questions
+                document.getElementById('savedQuizzesList').classList.add('hidden');
+                document.getElementById('quizContainer').classList.remove('hidden');
+                document.getElementById('saveQuizBtn').classList.add('hidden'); // Cannot resave a loaded saved quiz
+                
+                renderQuiz();
+
+            } catch (e) {
+                displayError("Error loading saved quiz data.");
+                console.error("Load Saved Quiz Error:", e);
+            }
+        }
+
         /**
          * Saves the currently loaded quiz to Firestore.
          */
@@ -352,11 +467,8 @@
             }
         }
 
-        // --- API UTILITY FUNCTIONS ---
-
-        /**
-         * Saves the API key entered by the user to sessionStorage.
-         */
+        // --- API UTILITY FUNCTIONS (Unchanged) ---
+        
         window.saveApiKey = function() {
             const input = document.getElementById('apiKeyInput');
             const status = document.getElementById('apiKeyStatus');
@@ -378,9 +490,6 @@
         }
 
 
-        /**
-         * Parses the JSON response string from the Gemini API and extracts the quiz data.
-         */
         function parseQuizResponse(jsonText) {
             try {
                 // The API might sometimes return the JSON embedded in markdown code block.
@@ -397,9 +506,6 @@
             }
         }
 
-        /**
-         * Makes a fetch request to the Gemini API with exponential backoff.
-         */
         async function fetchWithRetry(payload, retries = 3) {
             if (!API_KEY) {
                 throw new Error("API Key is missing. Please enter your key in the configuration section to use AI quizzes.");
@@ -446,13 +552,8 @@
         }
 
 
-        // --- UI MANAGEMENT ---
+        // --- UI MANAGEMENT (Unchanged) ---
 
-        /**
-         * Updates the UI to show/hide the loading state.
-         * @param {boolean} isLoading If true, shows the loading indicator and disables all mode buttons.
-         * @param {string} mode Used to customize loading text.
-         */
         function setLoading(isLoading, mode = '') {
             const modeButtons = document.querySelectorAll('.mode-button');
             const loadingIndicator = document.getElementById('loadingIndicator');
@@ -480,20 +581,15 @@
             }
         }
 
-        /**
-         * Displays an error message to the user.
-         */
         function displayError(message) {
             const errorDisplay = document.getElementById('errorDisplay');
             errorDisplay.innerHTML = `<p class="font-semibold">Error:</p><p>${message}</p>`;
             errorDisplay.classList.remove('hidden');
         }
 
-        /**
-         * Renders the quiz questions to the UI.
-         */
         function renderQuiz() {
             const container = document.getElementById('quizContainer');
+            const savedList = document.getElementById('savedQuizzesList');
             const submitContainer = document.getElementById('submissionContainer');
             container.innerHTML = '';
             userAnswers = {};
@@ -502,6 +598,10 @@
                 submitContainer.classList.add('hidden');
                 return;
             }
+            
+            // Ensure visibility is correct when rendering a quiz
+            container.classList.remove('hidden');
+            savedList.classList.add('hidden');
 
             quizData.forEach((q, index) => {
                 const qNum = index + 1;
@@ -743,15 +843,25 @@
          * @param {string} mode 'document', 'developer', 'artist', or 'programmer'
          */
         window.loadQuiz = function(mode) {
-            const modes = ['document', 'developer', 'artist', 'programmer'];
+            const modes = ['document', 'developer', 'artist', 'programmer', 'saved'];
             const quizTitle = document.getElementById('quizTitle');
             const quizDescription = document.getElementById('quizDescription');
             const saveBtn = document.getElementById('saveQuizBtn');
+            const quizContainer = document.getElementById('quizContainer');
+            const savedList = document.getElementById('savedQuizzesList');
 
             // Set button active state
             modes.forEach(m => {
                 document.getElementById(`mode-${m}`).classList.toggle('active', mode === m);
             });
+            
+            // Clear previous content views
+            quizContainer.classList.add('hidden');
+            savedList.classList.add('hidden');
+            document.getElementById('submissionContainer').classList.add('hidden');
+            document.getElementById('resultDisplay').classList.add('hidden');
+            document.getElementById('errorDisplay').classList.add('hidden');
+
 
             // Update header, mode, and load quiz
             if (mode === 'document') {
@@ -759,25 +869,32 @@
                 quizTitle.textContent = 'Quiz based on "Unity Question" Document';
                 quizDescription.textContent = 'Test your knowledge using the exact content from your uploaded file.';
                 saveBtn.classList.add('hidden');
+                quizContainer.classList.remove('hidden');
                 loadDocumentQuiz();
-            } else if (mode === 'developer') {
-                currentMode = 'developer';
-                quizTitle.textContent = 'AI-Generated Quiz: Game Developer (Design & Production)';
-                quizDescription.textContent = `Test your knowledge on game mechanics, production pipeline, and general design principles. (${QUESTION_COUNT} Questions)`;
+            } else if (mode === 'saved') {
+                currentMode = 'saved';
+                quizTitle.textContent = '💾 My Saved Quizzes';
+                quizDescription.textContent = 'Select a quiz you previously generated to load and take the test.';
+                saveBtn.classList.add('hidden');
+                savedList.classList.remove('hidden');
+                window.loadSavedQuizzes(); // Call the new function
+            } 
+            // AI Generated Modes
+            else {
+                currentMode = mode;
+                if (mode === 'developer') {
+                    quizTitle.textContent = 'AI-Generated Quiz: Game Developer (Design & Production)';
+                    quizDescription.textContent = `Test your knowledge on game mechanics, production pipeline, and general design principles. (${QUESTION_COUNT} Questions)`;
+                } else if (mode === 'artist') {
+                    quizTitle.textContent = 'AI-Generated Quiz: Game Artist (Modeling & PBR)';
+                    quizDescription.textContent = `Test your knowledge on 3D modeling, texturing, animation, and PBR workflow. (${QUESTION_COUNT} Questions)`;
+                } else if (mode === 'programmer') {
+                    quizTitle.textContent = 'AI-Generated Quiz: Game Programmer (Unity C#)';
+                    quizDescription.textContent = `Test your knowledge on C# scripting, Unity API, and common programming patterns. (${QUESTION_COUNT} Questions)`;
+                }
                 saveBtn.classList.remove('hidden');
-                generateAIQuiz('developer');
-            } else if (mode === 'artist') {
-                currentMode = 'artist';
-                quizTitle.textContent = 'AI-Generated Quiz: Game Artist (Modeling & PBR)';
-                quizDescription.textContent = `Test your knowledge on 3D modeling, texturing, animation, and PBR workflow. (${QUESTION_COUNT} Questions)`;
-                saveBtn.classList.remove('hidden');
-                generateAIQuiz('artist');
-            } else if (mode === 'programmer') {
-                currentMode = 'programmer';
-                quizTitle.textContent = 'AI-Generated Quiz: Game Programmer (Unity C#)';
-                quizDescription.textContent = `Test your knowledge on C# scripting, Unity API, and common programming patterns. (${QUESTION_COUNT} Questions)`;
-                saveBtn.classList.remove('hidden');
-                generateAIQuiz('programmer');
+                quizContainer.classList.remove('hidden');
+                generateAIQuiz(mode);
             }
         }
 
