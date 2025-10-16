@@ -145,7 +145,7 @@
                 <span id="loadingText" class="text-lg font-medium ml-4">Loading...</span>
             </div>
             <p id="loadingWarning" class="mt-2 text-sm text-red-500 font-semibold hidden">
-                Warning: Generating 200 questions may take over a minute and might fail due to API limits.
+                Warning: Generating 200 questions in chunks. This may take up to a minute.
             </p>
         </div>
 
@@ -197,7 +197,11 @@
         let API_KEY = ""; // Now a variable, initialized by the user
         const MODEL_NAME = "gemini-2.5-flash-preview-05-20";
         const API_URL_BASE = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=`;
-        const QUESTION_COUNT = 200; // Constant for the requested number of questions
+        
+        // --- QUESTION CONSTANTS (ADJUSTED FOR BATCHING) ---
+        const QUESTION_COUNT = 200; // Target total questions
+        const BATCH_SIZE = 20;      // Questions per request chunk
+        const MAX_BATCHES = QUESTION_COUNT / BATCH_SIZE; // Total number of batches to request (10)
 
         // --- FIREBASE CONFIGURATION (HARDCODED) ---
         let db;
@@ -206,7 +210,7 @@
         let userId = 'initializing'; // Default until auth is ready
 
         // V V V V V V V V V V V V V V V V V V V V V V V V V V
-        // HARDCODED CONFIGURATION USING USER'S LATEST SCRIPT
+        // HARDCODED CONFIGURATION 
         
         // 1. CONSTANT APP ID (Used in the Firestore Path)
         const appId = 'quiz-generator-app-id'; 
@@ -463,7 +467,7 @@
                     text = 'Loading document questions...';
                     loadingWarning.classList.add('hidden');
                 } else {
-                    text = `Generating ${QUESTION_COUNT} questions for the ${mode} role...`;
+                    text = `Starting AI generation for the ${mode} role...`;
                     loadingWarning.classList.remove('hidden');
                 }
 
@@ -638,78 +642,99 @@
             let systemPrompt = "";
             let userQuery = "";
 
-            // 1. Define Role-Specific Prompts for Accuracy and 200 Questions
+            // 1. Define Role-Specific Prompts for Accuracy and BATCH_SIZE
             if (role === 'developer') {
-                systemPrompt = `You are an expert Game Designer and Producer. Your task is to generate exactly ${QUESTION_COUNT} multiple-choice questions about game development methodologies, production roles, core game loop design, and player experience (UX/UI).
-                The response MUST be a single JSON array of objects. Each object MUST have the following keys: "question", "options" (4), and "correctAnswer".`;
-                userQuery = `Generate a ${QUESTION_COUNT}-question multiple-choice quiz on general game development (design and production) knowledge.`;
+                systemPrompt = `You are an expert Game Designer and Producer. Your task is to generate exactly ${BATCH_SIZE} multiple-choice questions about game development methodologies, production roles, core game loop design, and player experience (UX/UI). The response MUST be a single JSON array of objects. Each object MUST have the following keys: "question", "options" (4), and "correctAnswer".`;
+                userQuery = `Generate a ${BATCH_SIZE}-question multiple-choice quiz on general game development (design and production) knowledge.`;
             } else if (role === 'artist') {
-                systemPrompt = `You are an expert Game Artist specializing in 3D modeling and texturing (PBR). Your task is to generate exactly ${QUESTION_COUNT} multiple-choice questions about art pipelines, PBR metallic/roughness workflow, UV mapping, and animation fundamentals in game engines.
-                The response MUST be a single JSON array of objects. Each object MUST have the following keys: "question", "options" (4), and "correctAnswer".`;
-                userQuery = `Generate a ${QUESTION_COUNT}-question multiple-choice quiz on game art production and technical art concepts.`;
+                systemPrompt = `You are an expert Game Artist specializing in 3D modeling and texturing (PBR). Your task is to generate exactly ${BATCH_SIZE} multiple-choice questions about art pipelines, PBR metallic/roughness workflow, UV mapping, and animation fundamentals in game engines. The response MUST be a single JSON array of objects. Each object MUST have the following keys: "question", "options" (4), and "correctAnswer".`;
+                userQuery = `Generate a ${BATCH_SIZE}-question multiple-choice quiz on game art production and technical art concepts.`;
             } else if (role === 'programmer') {
-                systemPrompt = `You are an expert in C# scripting for the Unity game engine. Your task is to generate exactly ${QUESTION_COUNT} multiple-choice questions about C# fundamentals (like data types, loops, and methods) and their specific application within Unity (like MonoBehaviour, Start/Update methods, and components).
-                The response MUST be a single JSON array of objects. Each object MUST have the following keys: "question", "options" (4), and "correctAnswer".`;
-                userQuery = `Generate a ${QUESTION_COUNT}-question multiple-choice quiz on C# scripting basics in the context of Unity development.`;
+                systemPrompt = `You are an expert in C# scripting for the Unity game engine. Your task is to generate exactly ${BATCH_SIZE} multiple-choice questions about C# fundamentals (like data types, loops, and methods) and their specific application within Unity (like MonoBehaviour, Start/Update methods, and components). The response MUST be a single JSON array of objects. Each object MUST have the following keys: "question", "options" (4), and "correctAnswer".`;
+                userQuery = `Generate a ${BATCH_SIZE}-question multiple-choice quiz on C# scripting basics in the context of Unity development.`;
             } else {
                 displayError("Invalid AI quiz role specified.");
                 return;
             }
             
+            // --- BATCHING LOGIC START ---
             setLoading(true, role);
             document.getElementById('errorDisplay').classList.add('hidden');
             
-            // 2. API Payload with Structured Output
-            const payload = {
-                contents: [{ parts: [{ text: userQuery }] }],
-                systemInstruction: { parts: [{ text: systemPrompt }] },
-                generationConfig: {
-                    responseMimeType: "application/json",
-                    responseSchema: {
-                        type: "ARRAY",
-                        items: {
-                            type: "OBJECT",
-                            properties: {
-                                "question": { "type": "STRING" },
-                                "options": { "type": "ARRAY", "items": { "type": "STRING" } },
-                                "correctAnswer": { "type": "STRING" }
-                            },
-                            required: ["question", "options", "correctAnswer"]
+            let accumulatedData = [];
+            let finalError = null;
+
+            for (let i = 1; i <= MAX_BATCHES; i++) {
+                document.getElementById('loadingText').textContent = 
+                    `Generating batch ${i} of ${MAX_BATCHES}: Accumulating ${accumulatedData.length} questions...`;
+                
+                const payload = {
+                    contents: [{ parts: [{ text: userQuery }] }],
+                    systemInstruction: { parts: [{ text: systemPrompt }] },
+                    generationConfig: {
+                        responseMimeType: "application/json",
+                        responseSchema: {
+                            type: "ARRAY",
+                            items: {
+                                type: "OBJECT",
+                                properties: {
+                                    "question": { "type": "STRING" },
+                                    "options": { "type": "ARRAY", "items": { "type": "STRING" } },
+                                    "correctAnswer": { "type": "STRING" }
+                                },
+                                required: ["question", "options", "correctAnswer"]
+                            }
                         }
                     }
-                }
-            };
+                };
 
-            // 3. API Call and Error Handling
-            try {
-                const result = await fetchWithRetry(payload);
-                const textPart = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                try {
+                    const result = await fetchWithRetry(payload);
+                    const textPart = result.candidates?.[0]?.content?.parts?.[0]?.text;
 
-                if (textPart) {
-                    quizData = parseQuizResponse(textPart);
-                    if (quizData.length > 0) {
-                        
-                        // NEW LOADING STEP: Indicate success and saving is next
-                        document.getElementById('loadingText').textContent = 'Generation successful. Saving quiz...';
-                        
-                        // AUTOMATICALLY SAVE THE QUIZ
-                        // We do not wait for the save process to complete before rendering the quiz.
-                        window.saveQuiz(); 
-                        
-                        renderQuiz();
-                    } else {
-                        displayError("The API returned data, but it was not in the expected quiz format. Please try again.");
+                    if (textPart) {
+                        let batchData = parseQuizResponse(textPart);
+                        accumulatedData.push(...batchData);
                     }
-                } else {
-                    displayError("API response was successful but contained no generated text. Please try again.");
-                }
+                    
+                    // Stop if we hit the target early
+                    if (accumulatedData.length >= QUESTION_COUNT) {
+                        break;
+                    }
 
-            } catch (error) {
-                console.error("Quiz generation failed:", error);
-                displayError(`Failed to generate the quiz. Message: ${error.message}`);
-            } finally {
-                setLoading(false);
+                } catch (error) {
+                    console.error(`Batch ${i} failed:`, error);
+                    finalError = error;
+                    break; // Stop on first major API failure
+                }
             }
+            
+            setLoading(false); // Hide loading now that all fetching is done
+            
+            if (finalError) {
+                displayError(`Failed to complete quiz generation. Message: ${finalError.message}`);
+                return;
+            }
+
+            if (accumulatedData.length === 0) {
+                displayError("Quiz generation failed: No questions were returned across all batches.");
+                return;
+            }
+            
+            // Finalize quiz data by slicing to the target size (e.g., exactly 200)
+            quizData = accumulatedData.slice(0, QUESTION_COUNT);
+            
+            // Indicate success and saving is next
+            document.getElementById('loadingText').textContent = `Generation successful (${quizData.length} questions). Saving quiz...`;
+            document.getElementById('loadingIndicator').classList.remove('hidden'); // Show brief saving indicator
+
+            // AUTOMATICALLY SAVE THE QUIZ
+            await window.saveQuiz(); 
+            
+            // Hide the saving indicator before rendering
+            document.getElementById('loadingIndicator').classList.add('hidden');
+
+            renderQuiz();
         }
 
 
