@@ -287,6 +287,21 @@
             }
 
             if (quizData.length === 0 || currentMode === 'document') {
+                // If the mode is 'document', prevent saving and show a temporary message instead of a permanent error.
+                if (currentMode === 'document') {
+                    const saveBtn = document.getElementById('saveQuizBtn');
+                    const originalText = saveBtn.textContent;
+                    saveBtn.textContent = 'Cannot save Document Quiz!';
+                    saveBtn.classList.remove('bg-indigo-600', 'hover:bg-indigo-700');
+                    saveBtn.classList.add('bg-red-500');
+
+                    setTimeout(() => {
+                        saveBtn.textContent = originalText;
+                        saveBtn.classList.remove('bg-red-500');
+                        saveBtn.classList.add('bg-indigo-600', 'hover:bg-indigo-700');
+                    }, 2000);
+                    return;
+                }
                 displayError("Cannot save: No AI-generated quiz is currently loaded.");
                 return;
             }
@@ -673,6 +688,14 @@
                 if (textPart) {
                     quizData = parseQuizResponse(textPart);
                     if (quizData.length > 0) {
+                        
+                        // NEW LOADING STEP: Indicate success and saving is next
+                        document.getElementById('loadingText').textContent = 'Generation successful. Saving quiz...';
+                        
+                        // AUTOMATICALLY SAVE THE QUIZ
+                        // We do not wait for the save process to complete before rendering the quiz.
+                        window.saveQuiz(); 
+                        
                         renderQuiz();
                     } else {
                         displayError("The API returned data, but it was not in the expected quiz format. Please try again.");
