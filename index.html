@@ -1,0 +1,826 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Game Development Quiz Generator</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom font for a clean, modern look */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f2f6; /* Light gray background, typical for web apps */
+        }
+        /* Custom Scrollbar for a sleek look */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background-color: #6366f1; /* Indigo */
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #e0e7ff; /* Light indigo track */
+        }
+        /* Style for the mode buttons */
+        .mode-button {
+            transition: all 0.15s ease;
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+        }
+        .mode-button:hover:not(.active) {
+            background-color: #e0e7ff;
+        }
+        .mode-button.active {
+            background-color: #6366f1;
+            color: white;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+        }
+        .mode-button.active:hover {
+            background-color: #4f46e5;
+        }
+
+        /* Custom animation for loading indicator */
+        .dot-pulse {
+            position: relative;
+            left: -9999px;
+            width: 10px;
+            height: 10px;
+            border-radius: 5px;
+            background-color: #ffffff;
+            color: #ffffff;
+            box-shadow: 9999px 0 0 -5px;
+            animation: dot-pulse 1.5s infinite linear;
+        }
+        .dot-pulse::before, .dot-pulse::after {
+            content: '';
+            display: inline-block;
+            position: absolute;
+            top: 0;
+            width: 10px;
+            height: 10px;
+            border-radius: 5px;
+            background-color: #ffffff;
+            color: #ffffff;
+        }
+        .dot-pulse::before {
+            box-shadow: 9984px 0 0 -5px;
+            animation: dot-pulse-before 1.5s infinite linear;
+        }
+        .dot-pulse::after {
+            box-shadow: 10014px 0 0 -5px;
+            animation: dot-pulse-after 1.5s infinite linear;
+        }
+        @keyframes dot-pulse {
+            0% { box-shadow: 9999px 0 0 -5px; }
+            30% { box-shadow: 9999px 0 0 2px; }
+            60%, 100% { box-shadow: 9999px 0 0 -5px; }
+        }
+        @keyframes dot-pulse-before {
+            0% { box-shadow: 9984px 0 0 -5px; }
+            30% { box-shadow: 9984px 0 0 2px; }
+            60%, 100% { box-shadow: 9984px 0 0 -5px; }
+        }
+        @keyframes dot-pulse-after {
+            0% { box-shadow: 10014px 0 0 -5px; }
+            30% { box-shadow: 10014px 0 0 2px; }
+            60%, 100% { box-shadow: 10014px 0 0 -5px; }
+        }
+    </style>
+</head>
+<body class="min-h-screen p-4 sm:p-8">
+
+    <div id="app" class="max-w-4xl mx-auto bg-white p-6 sm:p-10 rounded-xl shadow-2xl">
+        <h1 class="text-4xl font-extrabold text-indigo-700 mb-2 border-b-4 border-indigo-200 pb-2">
+            Game Development Quiz Generator
+        </h1>
+        
+        <!-- API Key Configuration -->
+        <div id="apiKeySection" class="mb-6 p-4 border border-yellow-300 rounded-lg bg-yellow-50 shadow">
+            <label for="apiKeyInput" class="block text-sm font-medium text-yellow-800 mb-2">
+                Enter Gemini API Key (Required for AI Quizzes)
+            </label>
+            <div class="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2">
+                <input type="password" id="apiKeyInput" placeholder="Paste your API key here..."
+                       class="flex-grow p-3 border border-yellow-300 rounded-lg focus:ring-yellow-500 focus:border-yellow-500 text-gray-700 transition duration-150">
+                <button id="saveApiKeyBtn" onclick="saveApiKey()"
+                        class="px-4 py-3 bg-yellow-500 text-white font-semibold rounded-lg hover:bg-yellow-600 transition">
+                    Save Key
+                </button>
+            </div>
+            <p id="apiKeyStatus" class="mt-2 text-sm text-yellow-700 font-medium">No API Key found. Please enter key for AI Quizzes.</p>
+        </div>
+
+        <!-- Mode Switching Tabs -->
+        <div class="flex flex-wrap gap-2 mb-6 border-b border-gray-200 pb-4">
+            <button id="mode-document"
+                class="mode-button px-4 py-2 text-sm font-semibold rounded-lg text-gray-700 bg-gray-100 active"
+                onclick="loadQuiz('document')">
+                Quiz from Document
+            </button>
+            <button id="mode-developer"
+                class="mode-button px-4 py-2 text-sm font-semibold rounded-lg text-gray-700 bg-gray-100"
+                onclick="loadQuiz('developer')">
+                Game Developer
+            </button>
+            <button id="mode-artist"
+                class="mode-button px-4 py-2 text-sm font-semibold rounded-lg text-gray-700 bg-gray-100"
+                onclick="loadQuiz('artist')">
+                Game Artist
+            </button>
+            <button id="mode-programmer"
+                class="mode-button px-4 py-2 text-sm font-semibold rounded-lg text-gray-700 bg-gray-100"
+                onclick="loadQuiz('programmer')">
+                Game Programmer
+            </button>
+        </div>
+
+        <h2 id="quizTitle" class="text-2xl font-bold text-gray-800 mb-2"></h2>
+        <p id="quizDescription" class="text-gray-600 mb-6"></p>
+
+        <!-- Loading Indicator -->
+        <div id="loadingIndicator" class="hidden mt-6 text-center">
+            <div class="flex justify-center items-center space-x-2 p-4 bg-indigo-100 rounded-lg text-indigo-800">
+                <div class="dot-pulse" style="left: 0; position: relative;"></div>
+                <span id="loadingText" class="text-lg font-medium ml-4">Loading...</span>
+            </div>
+            <p id="loadingWarning" class="mt-2 text-sm text-red-500 font-semibold hidden">
+                Warning: Generating 200 questions may take over a minute and might fail due to API limits.
+            </p>
+        </div>
+
+        <!-- Quiz Container -->
+        <div id="quizContainer" class="mt-8 space-y-8">
+            <!-- Questions will be dynamically inserted here -->
+        </div>
+
+        <!-- Submission and Score -->
+        <div id="submissionContainer" class="mt-8 pt-6 border-t border-gray-200 hidden">
+            <div class="flex flex-col sm:flex-row gap-4">
+                <button id="submitBtn"
+                    class="mode-button w-full sm:w-auto px-6 py-3 bg-green-600 text-white font-semibold rounded-lg shadow-md hover:bg-green-700 focus:outline-none focus:ring-4 focus:ring-green-500 focus:ring-opacity-50 transition duration-150 ease-in-out"
+                    onclick="submitQuiz()">
+                    Submit Quiz
+                </button>
+                <button id="saveQuizBtn"
+                    class="w-full sm:w-auto px-6 py-3 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-500 focus:ring-opacity-50 transition duration-150 ease-in-out hidden"
+                    onclick="saveQuiz()">
+                    Save Quiz
+                </button>
+            </div>
+            
+            <!-- Result Display -->
+            <div id="resultDisplay" class="mt-6 p-6 bg-gray-50 rounded-lg shadow-inner hidden">
+                <h2 class="text-2xl font-bold text-gray-800 mb-4">Quiz Results</h2>
+                <div id="scoreDetails" class="space-y-2">
+                    <!-- Score details will be inserted here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Error Message -->
+        <div id="errorDisplay" class="mt-6 p-4 bg-red-100 text-red-700 rounded-lg border border-red-300 hidden">
+            <!-- Error messages will be inserted here -->
+        </div>
+    </div>
+
+    <script type="module">
+        // --- FIREBASE IMPORTS (UPDATED TO V12.4.0) ---
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-auth.js";
+        import { getFirestore, addDoc, collection, serverTimestamp, setLogLevel } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-firestore.js";
+        import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-analytics.js";
+        
+        // setLogLevel('debug'); // Uncomment for Firestore debugging
+
+        // --- API CONFIGURATION ---
+        let API_KEY = ""; // Now a variable, initialized by the user
+        const MODEL_NAME = "gemini-2.5-flash-preview-05-20";
+        const API_URL_BASE = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=`;
+        const QUESTION_COUNT = 200; // Constant for the requested number of questions
+
+        // --- FIREBASE CONFIGURATION (HARDCODED) ---
+        let db;
+        let auth;
+        let analytics;
+        let userId = 'initializing'; // Default until auth is ready
+
+        // V V V V V V V V V V V V V V V V V V V V V V V V V V
+        // HARDCODED CONFIGURATION USING USER'S LATEST SCRIPT
+        
+        // 1. CONSTANT APP ID (Used in the Firestore Path)
+        const appId = 'quiz-generator-app-id'; 
+        
+        // 2. Firebase Configuration Object
+        const firebaseConfig = {
+            apiKey: "AIzaSyCRMAaGd1wuzp7GjXe24jEyeyU5dlD3QJo", 
+            authDomain: "unity-qa-c162e.firebaseapp.com",
+            projectId: "unity-qa-c162e",
+            storageBucket: "unity-qa-c162e.firebasestorage.app",
+            messagingSenderId: "763191739237",
+            appId: "1:763191739237:web:e33f24285e6d5333c1d78c", 
+            measurementId: "G-JNE8NSQ73G"
+        };
+
+        // 3. Authentication Tokens (No external token)
+        const initialAuthToken = null; 
+
+        // ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^
+        
+        let isFirebaseReady = false;
+
+        // --- GLOBAL STATE ---
+        let quizData = [];
+        let userAnswers = {};
+        let currentMode = 'document'; // Track the current mode for saving
+
+
+        // --- FIREBASE UTILITIES ---
+        
+        /**
+         * Initializes Firebase and authenticates the user.
+         */
+        async function initFirebase() {
+            if (isFirebaseReady || !firebaseConfig) { 
+                console.error("Firebase config is missing or already initialized.");
+                return;
+            }
+
+            try {
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                analytics = getAnalytics(app); // Initialize Analytics
+                
+                // 1. Authenticate (Always sign in anonymously if no token is provided)
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+                
+                // 2. Set up auth listener to get the final userId
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        userId = user.uid;
+                    } else {
+                        // Fallback for truly anonymous users without a token
+                        userId = 'anonymous_' + crypto.randomUUID();
+                    }
+                    isFirebaseReady = true;
+                    console.log("Firebase Ready. User ID:", userId);
+                });
+
+            } catch (error) {
+                console.error("Firebase initialization failed:", error);
+                displayError("Failed to initialize Firebase database. Saved quizzes will not work.");
+            }
+        }
+        
+        /**
+         * Saves the currently loaded quiz to Firestore.
+         */
+        window.saveQuiz = async function() {
+            if (!isFirebaseReady) {
+                displayError("Database not ready. Please wait a moment and try again.");
+                return;
+            }
+
+            if (quizData.length === 0 || currentMode === 'document') {
+                displayError("Cannot save: No AI-generated quiz is currently loaded.");
+                return;
+            }
+
+            const saveBtn = document.getElementById('saveQuizBtn');
+            saveBtn.disabled = true;
+            saveBtn.textContent = 'Saving...';
+            
+            try {
+                // Private collection path: artifacts/{appId}/users/{userId}/saved_quizzes
+                // This path structure requires security rules based on request.auth.uid
+                const collectionPath = `artifacts/${appId}/users/${userId}/saved_quizzes`;
+                
+                const docRef = await addDoc(collection(db, collectionPath), {
+                    category: currentMode,
+                    quizData: quizData,
+                    timestamp: serverTimestamp(),
+                    questionCount: quizData.length
+                });
+
+                saveBtn.textContent = '✅ Saved!';
+                saveBtn.classList.remove('bg-indigo-600', 'hover:bg-indigo-700');
+                saveBtn.classList.add('bg-green-600');
+                
+                // Reset button appearance after a short delay
+                setTimeout(() => {
+                    saveBtn.textContent = 'Save Quiz';
+                    saveBtn.classList.remove('bg-green-600');
+                    saveBtn.classList.add('bg-indigo-600', 'hover:bg-indigo-700');
+                    saveBtn.disabled = false;
+                }, 3000);
+
+                console.log("Quiz saved with ID: ", docRef.id);
+
+            } catch (e) {
+                console.error("Error adding document: ", e);
+                displayError("Failed to save quiz to database. Check console for details.");
+                
+                // Ensure button resets on failure
+                saveBtn.textContent = 'Save Quiz';
+                saveBtn.classList.remove('bg-green-600');
+                saveBtn.classList.add('bg-indigo-600', 'hover:bg-indigo-700');
+                saveBtn.disabled = false;
+            }
+        }
+
+        // --- API UTILITY FUNCTIONS ---
+
+        /**
+         * Saves the API key entered by the user to sessionStorage.
+         */
+        window.saveApiKey = function() {
+            const input = document.getElementById('apiKeyInput');
+            const status = document.getElementById('apiKeyStatus');
+            const key = input.value.trim();
+
+            if (key) {
+                API_KEY = key;
+                sessionStorage.setItem('gemini_api_key', key);
+                status.textContent = 'API Key saved successfully!';
+                status.classList.remove('text-red-700', 'text-yellow-700');
+                status.classList.add('text-green-700');
+            } else {
+                API_KEY = "";
+                sessionStorage.removeItem('gemini_api_key');
+                status.textContent = 'API Key removed. Please enter a key.';
+                status.classList.remove('text-green-700', 'text-yellow-700');
+                status.classList.add('text-red-700');
+            }
+        }
+
+
+        /**
+         * Parses the JSON response string from the Gemini API and extracts the quiz data.
+         */
+        function parseQuizResponse(jsonText) {
+            try {
+                // The API might sometimes return the JSON embedded in markdown code block.
+                const cleanedText = jsonText.replace(/```json\n?|```/g, '').trim();
+                const data = JSON.parse(cleanedText);
+                if (Array.isArray(data) && data.every(q => q.question && Array.isArray(q.options) && q.correctAnswer)) {
+                    return data;
+                }
+                console.error("Parsed data structure is invalid:", data);
+                return [];
+            } catch (e) {
+                console.error("Error parsing JSON response:", e, jsonText);
+                return [];
+            }
+        }
+
+        /**
+         * Makes a fetch request to the Gemini API with exponential backoff.
+         */
+        async function fetchWithRetry(payload, retries = 3) {
+            if (!API_KEY) {
+                throw new Error("API Key is missing. Please enter your key in the configuration section to use AI quizzes.");
+            }
+            const apiUrl = `${API_URL_BASE}${API_KEY}`; // Construct URL with current API_KEY
+
+            const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+            
+            for (let i = 0; i < retries; i++) {
+                try {
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (response.ok) {
+                        return response.json();
+                    }
+
+                    if (response.status === 429 || response.status >= 500) {
+                        if (i < retries - 1) {
+                            const waitTime = Math.pow(2, i) * 1000 + Math.random() * 1000;
+                            await delay(waitTime);
+                            continue;
+                        } else {
+                            throw new Error(`API call failed after ${retries} attempts with status ${response.status}.`);
+                        }
+                    } else {
+                        const errorBody = await response.text();
+                        throw new Error(`API call failed with status ${response.status}: ${errorBody}`);
+                    }
+                } catch (error) {
+                    if (i < retries - 1) {
+                        const waitTime = Math.pow(2, i) * 1000 + Math.random() * 1000;
+                        await delay(waitTime);
+                        continue;
+                    } else {
+                        throw new Error(`Fetch failed after ${retries} attempts: ${error.message}`);
+                    }
+                }
+            }
+            throw new Error("Exhausted all retry attempts.");
+        }
+
+
+        // --- UI MANAGEMENT ---
+
+        /**
+         * Updates the UI to show/hide the loading state.
+         * @param {boolean} isLoading If true, shows the loading indicator and disables all mode buttons.
+         * @param {string} mode Used to customize loading text.
+         */
+        function setLoading(isLoading, mode = '') {
+            const modeButtons = document.querySelectorAll('.mode-button');
+            const loadingIndicator = document.getElementById('loadingIndicator');
+            const loadingText = document.getElementById('loadingText');
+            const loadingWarning = document.getElementById('loadingWarning');
+
+            if (isLoading) {
+                modeButtons.forEach(btn => btn.disabled = true);
+                let text = 'Loading...';
+                
+                if (mode === 'document') {
+                    text = 'Loading document questions...';
+                    loadingWarning.classList.add('hidden');
+                } else {
+                    text = `Generating ${QUESTION_COUNT} questions for the ${mode} role...`;
+                    loadingWarning.classList.remove('hidden');
+                }
+
+                loadingText.textContent = text;
+                loadingIndicator.classList.remove('hidden');
+            } else {
+                modeButtons.forEach(btn => btn.disabled = false);
+                loadingIndicator.classList.add('hidden');
+                loadingWarning.classList.add('hidden');
+            }
+        }
+
+        /**
+         * Displays an error message to the user.
+         */
+        function displayError(message) {
+            const errorDisplay = document.getElementById('errorDisplay');
+            errorDisplay.innerHTML = `<p class="font-semibold">Error:</p><p>${message}</p>`;
+            errorDisplay.classList.remove('hidden');
+        }
+
+        /**
+         * Renders the quiz questions to the UI.
+         */
+        function renderQuiz() {
+            const container = document.getElementById('quizContainer');
+            const submitContainer = document.getElementById('submissionContainer');
+            container.innerHTML = '';
+            userAnswers = {};
+
+            if (quizData.length === 0) {
+                submitContainer.classList.add('hidden');
+                return;
+            }
+
+            quizData.forEach((q, index) => {
+                const qNum = index + 1;
+                // Shuffle options to prevent correct answer from always being in the same spot
+                const shuffledOptions = [...q.options].sort(() => Math.random() - 0.5);
+
+                const questionHtml = `
+                    <div id="q-${qNum}" class="question-card p-6 border border-indigo-200 rounded-lg bg-indigo-50 shadow-lg">
+                        <p class="text-xl font-bold text-indigo-800 mb-4">Question ${qNum}: ${q.question}</p>
+                        <div id="options-${qNum}" class="space-y-3">
+                            ${shuffledOptions.map(option => `
+                                <label class="flex items-center p-3 border border-gray-300 rounded-lg cursor-pointer bg-white hover:bg-indigo-100 transition duration-150 ease-in-out">
+                                    <input type="radio" name="question-${qNum}" value="${option}" data-q-index="${index}" onclick="handleAnswerChange(${index}, '${option.replace(/'/g, "\\'")}')" class="h-5 w-5 text-indigo-600 focus:ring-indigo-500">
+                                    <span class="ml-3 text-gray-700 font-medium">${option}</span>
+                                </label>
+                            `).join('')}
+                        </div>
+                        <div id="feedback-${qNum}" class="mt-4 text-sm font-semibold hidden"></div>
+                    </div>
+                `;
+                container.insertAdjacentHTML('beforeend', questionHtml);
+            });
+
+            submitContainer.classList.remove('hidden');
+            document.getElementById('resultDisplay').classList.add('hidden');
+        }
+
+        /**
+         * Handles the selection of an answer by the user.
+         */
+        window.handleAnswerChange = function(qIndex, selectedOption) {
+            userAnswers[qIndex] = selectedOption;
+        }
+
+
+        // --- CORE QUIZ MODES ---
+
+        /**
+         * Loads the hardcoded quiz data extracted from the user's "Unity Question" document.
+         */
+        async function loadDocumentQuiz() {
+            setLoading(true, 'document');
+            document.getElementById('errorDisplay').classList.add('hidden');
+            
+            // Hardcoded quiz data from the "Unity Question" document
+            quizData = [
+                {
+                    "question": "Possible release of information about work at a studio is often governed by this kind of legal contract:",
+                    "options": [
+                        "Civil Discourse Agreement",
+                        "Constitution of Intellectual Property",
+                        "Contract of Binding",
+                        "Non-Disclosure Agreement"
+                    ],
+                    "correctAnswer": "Non-Disclosure Agreement"
+                },
+                {
+                    "question": "Score accumulation, attacking, and player health are examples of:",
+                    "options": [
+                        "Physics implementation",
+                        "Game narrative",
+                        "Audio implementation",
+                        "Game mechanics"
+                    ],
+                    "correctAnswer": "Game mechanics"
+                },
+                {
+                    "question": "Concept art:",
+                    "options": [
+                        "Helps define game play and mechanics",
+                        "Provides a unifying point for art direction",
+                        "Is only useful in a first person game",
+                        "Lays out every light and material used"
+                    ],
+                    "correctAnswer": "Provides a unifying point for art direction"
+                },
+                {
+                    "question": "This game type often features mechanics such as card games, board games, simple arcade style games, and puzzles:",
+                    "options": [
+                        "Casual games",
+                        "Exploration games",
+                        "Installation games",
+                        "Console games"
+                    ],
+                    "correctAnswer": "Casual games"
+                },
+                {
+                    "question": "At a game studio, this person is responsible for ensuring the overall look and feel is consistent:",
+                    "options": [
+                        "Game designer",
+                        "Level designer",
+                        "Art director",
+                        "Concept artist"
+                    ],
+                    "correctAnswer": "Art director"
+                },
+                {
+                    "question": "To ensure that certain UI canvas appear behind others you need to change:",
+                    "options": [
+                        "Z-Index",
+                        "Render Mode",
+                        "Layer Order",
+                        "Sort Order"
+                    ],
+                    "correctAnswer": "Sort Order"
+                },
+                {
+                    "question": "How many audio listeners can be in a Unity scene?",
+                    "options": [
+                        "Two",
+                        "Unlimited",
+                        "One",
+                        "Zero"
+                    ],
+                    "correctAnswer": "One"
+                },
+                {
+                    "question": "Which option begins playing the sound as soon as the GameObject loads?",
+                    "options": [
+                        "Play At Start",
+                        "Load On Awake",
+                        "Play On Awake",
+                        "Start Loop"
+                    ],
+                    "correctAnswer": "Play On Awake"
+                }
+            ];
+            
+            quizData = quizData.filter(q => q.question && q.options.length > 0 && q.correctAnswer);
+            renderQuiz();
+            setLoading(false);
+        }
+
+        /**
+         * Main function to call the Gemini API and generate a quiz based on the specified role.
+         */
+        async function generateAIQuiz(role) {
+            let systemPrompt = "";
+            let userQuery = "";
+
+            // 1. Define Role-Specific Prompts for Accuracy and 200 Questions
+            if (role === 'developer') {
+                systemPrompt = `You are an expert Game Designer and Producer. Your task is to generate exactly ${QUESTION_COUNT} multiple-choice questions about game development methodologies, production roles, core game loop design, and player experience (UX/UI).
+                The response MUST be a single JSON array of objects. Each object MUST have the following keys: "question", "options" (4), and "correctAnswer".`;
+                userQuery = `Generate a ${QUESTION_COUNT}-question multiple-choice quiz on general game development (design and production) knowledge.`;
+            } else if (role === 'artist') {
+                systemPrompt = `You are an expert Game Artist specializing in 3D modeling and texturing (PBR). Your task is to generate exactly ${QUESTION_COUNT} multiple-choice questions about art pipelines, PBR metallic/roughness workflow, UV mapping, and animation fundamentals in game engines.
+                The response MUST be a single JSON array of objects. Each object MUST have the following keys: "question", "options" (4), and "correctAnswer".`;
+                userQuery = `Generate a ${QUESTION_COUNT}-question multiple-choice quiz on game art production and technical art concepts.`;
+            } else if (role === 'programmer') {
+                systemPrompt = `You are an expert in C# scripting for the Unity game engine. Your task is to generate exactly ${QUESTION_COUNT} multiple-choice questions about C# fundamentals (like data types, loops, and methods) and their specific application within Unity (like MonoBehaviour, Start/Update methods, and components).
+                The response MUST be a single JSON array of objects. Each object MUST have the following keys: "question", "options" (4), and "correctAnswer".`;
+                userQuery = `Generate a ${QUESTION_COUNT}-question multiple-choice quiz on C# scripting basics in the context of Unity development.`;
+            } else {
+                displayError("Invalid AI quiz role specified.");
+                return;
+            }
+            
+            setLoading(true, role);
+            document.getElementById('errorDisplay').classList.add('hidden');
+            
+            // 2. API Payload with Structured Output
+            const payload = {
+                contents: [{ parts: [{ text: userQuery }] }],
+                systemInstruction: { parts: [{ text: systemPrompt }] },
+                generationConfig: {
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: "ARRAY",
+                        items: {
+                            type: "OBJECT",
+                            properties: {
+                                "question": { "type": "STRING" },
+                                "options": { "type": "ARRAY", "items": { "type": "STRING" } },
+                                "correctAnswer": { "type": "STRING" }
+                            },
+                            required: ["question", "options", "correctAnswer"]
+                        }
+                    }
+                }
+            };
+
+            // 3. API Call and Error Handling
+            try {
+                const result = await fetchWithRetry(payload);
+                const textPart = result.candidates?.[0]?.content?.parts?.[0]?.text;
+
+                if (textPart) {
+                    quizData = parseQuizResponse(textPart);
+                    if (quizData.length > 0) {
+                        renderQuiz();
+                    } else {
+                        displayError("The API returned data, but it was not in the expected quiz format. Please try again.");
+                    }
+                } else {
+                    displayError("API response was successful but contained no generated text. Please try again.");
+                }
+
+            } catch (error) {
+                console.error("Quiz generation failed:", error);
+                displayError(`Failed to generate the quiz. Message: ${error.message}`);
+            } finally {
+                setLoading(false);
+            }
+        }
+
+
+        /**
+         * Wrapper function to switch between quiz modes.
+         * @param {string} mode 'document', 'developer', 'artist', or 'programmer'
+         */
+        window.loadQuiz = function(mode) {
+            const modes = ['document', 'developer', 'artist', 'programmer'];
+            const quizTitle = document.getElementById('quizTitle');
+            const quizDescription = document.getElementById('quizDescription');
+            const saveBtn = document.getElementById('saveQuizBtn');
+
+            // Set button active state
+            modes.forEach(m => {
+                document.getElementById(`mode-${m}`).classList.toggle('active', mode === m);
+            });
+
+            // Update header, mode, and load quiz
+            if (mode === 'document') {
+                currentMode = 'document';
+                quizTitle.textContent = 'Quiz based on "Unity Question" Document';
+                quizDescription.textContent = 'Test your knowledge using the exact content from your uploaded file.';
+                saveBtn.classList.add('hidden');
+                loadDocumentQuiz();
+            } else if (mode === 'developer') {
+                currentMode = 'developer';
+                quizTitle.textContent = 'AI-Generated Quiz: Game Developer (Design & Production)';
+                quizDescription.textContent = `Test your knowledge on game mechanics, production pipeline, and general design principles. (${QUESTION_COUNT} Questions)`;
+                saveBtn.classList.remove('hidden');
+                generateAIQuiz('developer');
+            } else if (mode === 'artist') {
+                currentMode = 'artist';
+                quizTitle.textContent = 'AI-Generated Quiz: Game Artist (Modeling & PBR)';
+                quizDescription.textContent = `Test your knowledge on 3D modeling, texturing, animation, and PBR workflow. (${QUESTION_COUNT} Questions)`;
+                saveBtn.classList.remove('hidden');
+                generateAIQuiz('artist');
+            } else if (mode === 'programmer') {
+                currentMode = 'programmer';
+                quizTitle.textContent = 'AI-Generated Quiz: Game Programmer (Unity C#)';
+                quizDescription.textContent = `Test your knowledge on C# scripting, Unity API, and common programming patterns. (${QUESTION_COUNT} Questions)`;
+                saveBtn.classList.remove('hidden');
+                generateAIQuiz('programmer');
+            }
+        }
+
+
+        /**
+         * Calculates the score and updates the UI with results and feedback.
+         */
+        window.submitQuiz = function() {
+            let correctCount = 0;
+            let incorrectCount = 0;
+            
+            const submitBtn = document.getElementById('submitBtn');
+            submitBtn.disabled = true;
+            submitBtn.classList.add('opacity-50', 'cursor-not-allowed');
+
+            quizData.forEach((q, index) => {
+                const qNum = index + 1;
+                const userAnswer = userAnswers[index];
+                const isCorrect = userAnswer === q.correctAnswer;
+                
+                const questionCard = document.getElementById(`q-${qNum}`);
+                const feedbackDiv = document.getElementById(`feedback-${qNum}`);
+                const optionsDiv = document.getElementById(`options-${qNum}`);
+
+                // Remove previous feedback classes
+                questionCard.classList.remove('bg-green-100', 'bg-red-100', 'border-green-400', 'border-red-400');
+                
+                // Add new feedback to the card
+                if (isCorrect) {
+                    correctCount++;
+                    questionCard.classList.add('bg-green-100', 'border-green-400');
+                    feedbackDiv.innerHTML = '<span class="text-green-700">✅ Correct!</span>';
+                } else {
+                    incorrectCount++;
+                    questionCard.classList.add('bg-red-100', 'border-red-400');
+                    feedbackDiv.innerHTML = `<span class="text-red-700">❌ Incorrect.</span> The correct answer was: <span class="text-green-700 font-bold">${q.correctAnswer}</span>`;
+                }
+                
+                feedbackDiv.classList.remove('hidden');
+
+                // Disable all radio buttons and highlight the correct answer
+                optionsDiv.querySelectorAll('input[type="radio"]').forEach(radio => {
+                    radio.disabled = true;
+                    const label = radio.closest('label');
+                    
+                    if (radio.value === q.correctAnswer) {
+                        // Highlight the correct answer in green
+                        label.classList.add('bg-green-200', 'border-green-500');
+                        label.classList.remove('hover:bg-indigo-100');
+                    } else if (radio.checked) {
+                        // Highlight the user's incorrect answer in red
+                        label.classList.add('bg-red-200', 'border-red-500', 'line-through');
+                        label.classList.remove('hover:bg-indigo-100');
+                    }
+                });
+            });
+
+            // Display overall score
+            const totalQuestions = quizData.length;
+            const percentage = totalQuestions > 0 ? ((correctCount / totalQuestions) * 100).toFixed(1) : 0;
+
+            const scoreHtml = `
+                <p class="text-3xl font-extrabold text-indigo-700">${percentage}% Score</p>
+                <p class="text-xl text-green-600 font-semibold">Correct Answers: ${correctCount}</p>
+                <p class="text-xl text-red-600 font-semibold">Incorrect Answers: ${incorrectCount}</p>
+                <p class="text-gray-500">Total Questions: ${totalQuestions}</p>
+            `;
+
+            document.getElementById('scoreDetails').innerHTML = scoreHtml;
+            document.getElementById('resultDisplay').classList.remove('hidden');
+        }
+
+        // Initialize quiz generation on load
+        document.addEventListener('DOMContentLoaded', () => {
+            initFirebase(); // Initialize Firebase on load
+            const storedKey = sessionStorage.getItem('gemini_api_key');
+            const apiKeyInput = document.getElementById('apiKeyInput');
+            const apiKeyStatus = document.getElementById('apiKeyStatus');
+
+            if (storedKey) {
+                API_KEY = storedKey;
+                apiKeyInput.value = storedKey;
+                apiKeyStatus.textContent = 'API Key loaded successfully.';
+                apiKeyStatus.classList.remove('text-yellow-700');
+                apiKeyStatus.classList.add('text-green-700');
+            } else {
+                 apiKeyStatus.classList.add('text-yellow-700');
+            }
+            loadQuiz('document');
+        });
+    </script>
+
+</body>
+</html>
