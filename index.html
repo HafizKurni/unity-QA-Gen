@@ -154,8 +154,13 @@
             </p>
         </div>
 
+        <!-- Saved Quiz Prompt/Action Container (New) -->
+        <div id="quizActionContainer" class="mt-8 hidden">
+             <!-- Saved quiz check message and buttons will go here -->
+        </div>
+
         <!-- Quiz Container -->
-        <div id="quizContainer" class="mt-8 space-y-8">
+        <div id="quizContainer" class="mt-8 space-y-8 hidden">
             <!-- Questions will be dynamically inserted here -->
         </div>
         
@@ -200,7 +205,7 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-auth.js";
         // NOTE: Importing 'query' and 'getDocs' for loading saved quizzes
-        import { getFirestore, addDoc, collection, serverTimestamp, setLogLevel, query, getDocs, orderBy } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-firestore.js"; 
+        import { getFirestore, addDoc, collection, serverTimestamp, setLogLevel, query, getDocs, where, limit } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-firestore.js"; 
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-analytics.js";
         
         // setLogLevel('debug'); // Uncomment for Firestore debugging
@@ -552,8 +557,13 @@
         }
 
 
-        // --- UI MANAGEMENT (Unchanged) ---
+        // --- UI MANAGEMENT ---
 
+        /**
+         * Updates the UI to show/hide the loading state.
+         * @param {boolean} isLoading If true, shows the loading indicator and disables all mode buttons.
+         * @param {string} mode Used to customize loading text.
+         */
         function setLoading(isLoading, mode = '') {
             const modeButtons = document.querySelectorAll('.mode-button');
             const loadingIndicator = document.getElementById('loadingIndicator');
@@ -567,7 +577,11 @@
                 if (mode === 'document') {
                     text = 'Loading document questions...';
                     loadingWarning.classList.add('hidden');
-                } else {
+                } else if (mode === 'checking') {
+                     text = 'Checking database for saved quiz...';
+                     loadingWarning.classList.add('hidden');
+                }
+                 else {
                     text = `Starting AI generation for the ${mode} role...`;
                     loadingWarning.classList.remove('hidden');
                 }
@@ -581,12 +595,18 @@
             }
         }
 
+        /**
+         * Displays an error message to the user.
+         */
         function displayError(message) {
             const errorDisplay = document.getElementById('errorDisplay');
             errorDisplay.innerHTML = `<p class="font-semibold">Error:</p><p>${message}</p>`;
             errorDisplay.classList.remove('hidden');
         }
 
+        /**
+         * Renders the quiz questions to the UI.
+         */
         function renderQuiz() {
             const container = document.getElementById('quizContainer');
             const savedList = document.getElementById('savedQuizzesList');
@@ -602,6 +622,7 @@
             // Ensure visibility is correct when rendering a quiz
             container.classList.remove('hidden');
             savedList.classList.add('hidden');
+            document.getElementById('quizActionContainer').classList.add('hidden'); // Hide prompt/action container
 
             quizData.forEach((q, index) => {
                 const qNum = index + 1;
@@ -736,6 +757,88 @@
         }
 
         /**
+         * Checks Firestore for a saved quiz in the given category and prompts the user.
+         */
+        window.checkAndLoadQuiz = async function(role) {
+            if (!isFirebaseReady) {
+                 displayError("Database not ready. Cannot check for saved quizzes.");
+                 return;
+            }
+            if (!API_KEY) {
+                displayError("API Key is missing. Please enter your key to generate a new quiz or proceed to the saved list.");
+                return;
+            }
+
+            setLoading(true, 'checking');
+
+            const actionContainer = document.getElementById('quizActionContainer');
+            const collectionPath = `artifacts/${appId}/users/${userId}/saved_quizzes`;
+
+            try {
+                // Query the database for the *last* saved quiz of this category.
+                const q = query(collection(db, collectionPath), where('category', '==', role), limit(1));
+                const querySnapshot = await getDocs(q);
+
+                setLoading(false);
+
+                if (!querySnapshot.empty) {
+                    const savedDoc = querySnapshot.docs[0];
+                    const savedData = savedDoc.data();
+                    const date = savedData.timestamp ? savedData.timestamp.toDate().toLocaleString() : 'N/A';
+                    
+                    // Display the prompt to the user
+                    actionContainer.innerHTML = `
+                        <div class="p-6 bg-blue-100 border border-blue-400 rounded-lg shadow-xl">
+                            <h3 class="text-xl font-bold text-blue-800 mb-2">Saved Quiz Found!</h3>
+                            <p class="text-blue-700 mb-4">
+                                A **${role.toUpperCase()}** quiz (${savedData.questionCount} questions) was saved on **${date}**.
+                            </p>
+                            <div class="flex flex-col sm:flex-row gap-4">
+                                <button onclick="loadFromSavedQuizAction(true, '${savedDoc.id}', ${JSON.stringify(savedData.quizData).replace(/'/g, "\\'")}, '${savedData.category}')"
+                                    class="px-6 py-3 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition">
+                                    Load Saved Quiz
+                                </button>
+                                <button onclick="loadFromSavedQuizAction(false, null, null, '${role}')"
+                                    class="px-6 py-3 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition">
+                                    Generate New (Uses API Key)
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                    actionContainer.classList.remove('hidden');
+                } else {
+                    // No saved quiz found, proceed directly to generation
+                    document.getElementById('loadingText').textContent = `No saved quiz found. Starting new generation...`;
+                    actionContainer.classList.add('hidden');
+                    generateAIQuiz(role);
+                }
+
+            } catch (e) {
+                setLoading(false);
+                console.error("Error checking saved quizzes:", e);
+                displayError("Failed to check database. Attempting to generate new quiz directly.");
+                // Fallback: Proceed directly to generation if database check fails
+                generateAIQuiz(role);
+            }
+        }
+
+        /**
+         * Handles the user's choice from the saved quiz prompt.
+         */
+        window.loadFromSavedQuizAction = function(loadSaved, quizId, data, category) {
+            const actionContainer = document.getElementById('quizActionContainer');
+            actionContainer.classList.add('hidden');
+
+            if (loadSaved) {
+                // 1. User chose to load saved quiz
+                window.loadFromSaved(quizId, data, category);
+            } else {
+                // 2. User chose to generate new quiz
+                generateAIQuiz(category);
+            }
+        }
+
+        /**
          * Main function to call the Gemini API and generate a quiz based on the specified role.
          */
         async function generateAIQuiz(role) {
@@ -849,6 +952,8 @@
             const saveBtn = document.getElementById('saveQuizBtn');
             const quizContainer = document.getElementById('quizContainer');
             const savedList = document.getElementById('savedQuizzesList');
+            const actionContainer = document.getElementById('quizActionContainer');
+
 
             // Set button active state
             modes.forEach(m => {
@@ -858,6 +963,7 @@
             // Clear previous content views
             quizContainer.classList.add('hidden');
             savedList.classList.add('hidden');
+            actionContainer.classList.add('hidden');
             document.getElementById('submissionContainer').classList.add('hidden');
             document.getElementById('resultDisplay').classList.add('hidden');
             document.getElementById('errorDisplay').classList.add('hidden');
@@ -893,8 +999,8 @@
                     quizDescription.textContent = `Test your knowledge on C# scripting, Unity API, and common programming patterns. (${QUESTION_COUNT} Questions)`;
                 }
                 saveBtn.classList.remove('hidden');
-                quizContainer.classList.remove('hidden');
-                generateAIQuiz(mode);
+                // Instead of generating, check database first
+                checkAndLoadQuiz(mode);
             }
         }
 
