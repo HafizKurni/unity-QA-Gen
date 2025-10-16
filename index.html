@@ -1,0 +1,1894 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Game Development Quiz Reader</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom font for a clean, modern look */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f2f6; /* Light gray background, typical for web apps */
+        }
+        /* Custom Scrollbar for a sleek look */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background-color: #6366f1; /* Indigo */
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #e0e7ff; /* Light indigo track */
+        }
+        /* Style for the mode buttons */
+        .mode-button {
+            transition: all 0.15s ease;
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+        }
+        .mode-button:hover:not(.active) {
+            background-color: #e0e7ff;
+        }
+        .mode-button.active {
+            background-color: #6366f1;
+            color: white;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+        }
+        .mode-button.active:hover {
+            background-color: #4f46e5;
+        }
+
+        /* Custom animation for loading indicator */
+        .dot-pulse {
+            position: relative;
+            left: -9999px;
+            width: 10px;
+            height: 10px;
+            border-radius: 5px;
+            background-color: #ffffff;
+            color: #ffffff;
+            box-shadow: 9999px 0 0 -5px;
+            animation: dot-pulse 1.5s infinite linear;
+        }
+        .dot-pulse::before, .dot-pulse::after {
+            content: '';
+            display: inline-block;
+            position: absolute;
+            top: 0;
+            width: 10px;
+            height: 10px;
+            border-radius: 5px;
+            background-color: #ffffff;
+            color: #ffffff;
+        }
+        .dot-pulse::before {
+            box-shadow: 9984px 0 0 -5px;
+            animation: dot-pulse-before 1.5s infinite linear;
+        }
+        .dot-pulse::after {
+            box-shadow: 10014px 0 0 -5px;
+            animation: dot-pulse-after 1.5s infinite linear;
+        }
+        @keyframes dot-pulse {
+            0% { box-shadow: 9999px 0 0 -5px; }
+            30% { box-shadow: 9999px 0 0 2px; }
+            60%, 100% { box-shadow: 9999px 0 0 -5px; }
+        }
+        @keyframes dot-pulse-before {
+            0% { box-shadow: 9984px 0 0 -5px; }
+            30% { box-shadow: 9984px 0 0 2px; }
+            60%, 100% { box-shadow: 9984px 0 0 -5px; }
+        }
+        @keyframes dot-pulse-after {
+            0% { box-shadow: 10014px 0 0 -5px; }
+            30% { box-shadow: 10014px 0 0 2px; }
+            60%, 100% { box-shadow: 10014px 0 0 -5px; }
+        }
+    </style>
+</head>
+<body class="min-h-screen p-4 sm:p-8">
+
+    <div id="app" class="max-w-4xl mx-auto bg-white p-6 sm:p-10 rounded-xl shadow-2xl">
+        <h1 class="text-4xl font-extrabold text-indigo-700 mb-2 border-b-4 border-indigo-200 pb-2">
+            Game Development Quiz Reader (Database Only)
+        </h1>
+        
+        <!-- Mode Switching Tabs (Removed 'My Saved Quizzes') -->
+        <div class="flex flex-wrap gap-2 mb-6 border-b border-gray-200 pb-4">
+            <button id="mode-document"
+                class="mode-button px-4 py-2 text-sm font-semibold rounded-lg text-gray-700 bg-gray-100 active"
+                onclick="loadQuiz('document')">
+                Quiz from Document
+            </button>
+            <button id="mode-developer"
+                class="mode-button px-4 py-2 text-sm font-semibold rounded-lg text-gray-700 bg-gray-100"
+                onclick="loadQuiz('developer')">
+                Game Developer (DB)
+            </button>
+            <button id="mode-artist"
+                class="mode-button px-4 py-2 text-sm font-semibold rounded-lg text-gray-700 bg-gray-100"
+                onclick="loadQuiz('artist')">
+                Game Artist (DB)
+            </button>
+            <button id="mode-programmer"
+                class="mode-button px-4 py-2 text-sm font-semibold rounded-lg text-gray-700 bg-gray-100"
+                onclick="loadQuiz('programmer')">
+                Game Programmer (DB)
+            </button>
+        </div>
+
+        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 border-b pb-4">
+             <!-- Question Count Setting -->
+            <div class="mb-4 sm:mb-0 w-full sm:w-1/2">
+                <label for="questionCountInput" class="block text-sm font-medium text-gray-700 mb-1">
+                    Questions to Display (Max 200)
+                </label>
+                <input type="number" id="questionCountInput" value="50" min="1" max="200"
+                       class="w-full p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-gray-700 transition duration-150">
+            </div>
+            
+            <!-- Quiz Title and Description -->
+            <div class="sm:ml-6 w-full sm:w-1/2">
+                <h2 id="quizTitle" class="text-2xl font-bold text-gray-800 mb-1"></h2>
+                <p id="quizDescription" class="text-gray-600">
+                    Total Questions: <span id="totalQuestionCount" class="font-semibold text-indigo-600">N/A</span>
+                </p>
+            </div>
+        </div>
+
+        <!-- Loading Indicator (Simplified) -->
+        <div id="loadingIndicator" class="hidden mt-6 text-center">
+            <div class="flex justify-center items-center space-x-2 p-4 bg-indigo-100 rounded-lg text-indigo-800">
+                <div class="dot-pulse" style="left: 0; position: relative;"></div>
+                <span id="loadingText" class="text-lg font-medium ml-4">Loading...</span>
+            </div>
+        </div>
+
+        <!-- Quiz Container -->
+        <div id="quizContainer" class="mt-8 space-y-8 hidden">
+            <!-- Questions will be dynamically inserted here -->
+        </div>
+        
+        <!-- Saved Quizzes List Container (General purpose message container now) -->
+        <!-- NOTE: This container is now obsolete but kept hidden for simple messaging -->
+        <div id="savedQuizzesList" class="mt-8 space-y-4 hidden">
+            <!-- Saved quiz list or messages will be inserted here -->
+        </div>
+
+
+        <!-- Submission and Score -->
+        <div id="submissionContainer" class="mt-8 pt-6 border-t border-gray-200 hidden">
+            <div class="flex flex-col sm:flex-row gap-4">
+                <button id="submitBtn"
+                    class="mode-button w-full sm:w-auto px-6 py-3 bg-green-600 text-white font-semibold rounded-lg shadow-md hover:bg-green-700 focus:outline-none focus:ring-4 focus:ring-green-500 focus:ring-opacity-50 transition duration-150 ease-in-out"
+                    onclick="submitQuiz()">
+                    Submit Quiz
+                </button>
+            </div>
+            
+            <!-- Result Display -->
+            <div id="resultDisplay" class="mt-6 p-6 bg-gray-50 rounded-lg shadow-inner hidden">
+                <h2 class="text-2xl font-bold text-gray-800 mb-4">Quiz Results</h2>
+                <div id="scoreDetails" class="space-y-2">
+                    <!-- Score details will be inserted here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Error Message -->
+        <div id="errorDisplay" class="mt-6 p-4 bg-red-100 text-red-700 rounded-lg border border-red-300 hidden">
+            <!-- Error messages will be inserted here -->
+        </div>
+    </div>
+
+    <script type="module">
+        // --- FIREBASE IMPORTS (UPDATED TO V12.4.0) ---
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-auth.js";
+        // NOTE: Importing 'doc' and 'getDoc' for efficient loading by ID
+        import { getFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-firestore.js"; 
+        import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-analytics.js";
+        
+        // --- HARDCODED QUIZ DOCUMENT IDs & FIXED USER ID ---
+        const HARDCODED_USER_ID = "bQ8q8UmGNlhwHYsGFO17RFb0wUr2"; 
+        const PROGRAMMER_QUIZ_ID = "2gCf2B8pSw3v77tGjs3N"; 
+        const ARTIST_QUIZ_ID = "gdS8nloEOqADjTlEJJPf"; 
+        const DEVELOPER_QUIZ_ID = "SkfVeRf0HDy5q3jBiC5O"; 
+        
+        // --- FIREBASE CONFIGURATION (HARDCODED) ---
+        let db;
+        let auth;
+        let analytics;
+        let userId = 'initializing'; 
+
+        // V V V V V V V V V V V V V V V V V V V V V V V V V V
+        // HARDCODED CONFIGURATION 
+        
+        // 1. CONSTANT APP ID (Used in the Firestore Path)
+        const appId = 'quiz-generator-app-id'; 
+        
+        // 2. Firebase Configuration Object
+        const firebaseConfig = {
+            apiKey: "AIzaSyCRMAaGd1wuzp7GjXe24jEyeyU5dlD3QJo", 
+            authDomain: "unity-qa-c162e.firebaseapp.com",
+            projectId: "unity-qa-c162e",
+            storageBucket: "unity-qa-c162e.firebasestorage.app",
+            messagingSenderId: "763191739237",
+            appId: "1:763191739237:web:e33f24285e6d5333c1d78c", 
+            measurementId: "G-JNE8NSQ73G"
+        };
+
+        // 3. Authentication Tokens (No external token)
+        const initialAuthToken = null; 
+
+        // ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^
+        
+        let isFirebaseReady = false;
+
+        // --- GLOBAL STATE ---
+        let quizData = [];
+        let userAnswers = {};
+        let currentMode = 'document'; 
+
+
+        // --- FIREBASE UTILITIES ---
+        
+        /**
+         * Initializes Firebase and authenticates the user.
+         */
+        async function initFirebase() {
+            if (isFirebaseReady || !firebaseConfig) { 
+                console.error("Firebase config is missing or already initialized.");
+                return;
+            }
+
+            try {
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                
+                try {
+                    analytics = getAnalytics(app); 
+                } catch(e) {
+                    console.warn("Analytics failed to initialize. Skipping.");
+                }
+                
+                // 1. Authenticate (Always sign in anonymously if no token is provided)
+                await signInAnonymously(auth);
+                
+                // 2. Set up auth listener to get the final userId
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        userId = user.uid;
+                    } else {
+                        userId = 'anonymous_' + crypto.randomUUID();
+                    }
+                    isFirebaseReady = true;
+                    console.log("Firebase Ready. User ID:", userId);
+                    // Force the initial load again after Auth is ready
+                    if (document.getElementById('mode-document').classList.contains('active')) {
+                        loadQuiz('document');
+                    }
+                });
+
+            } catch (error) {
+                console.error("Firebase initialization failed:", error);
+                displayError("Failed to initialize Firebase database. Cannot read quizzes.");
+            }
+        }
+        
+        /**
+         * Loads a single quiz by its document ID from Firestore.
+         */
+        window.loadQuizFromDatabase = async function(quizId, category) {
+            if (!isFirebaseReady) {
+                displayError("Database not ready.");
+                return;
+            }
+            if (quizId.includes("YOUR")) {
+                 // Placeholder check is now simplified
+                 displayError(`The ${category.toUpperCase()} quiz is missing its Document ID in the source code.`);
+                 return;
+            }
+            
+            setLoading(true, 'loading');
+            document.getElementById('loadingText').textContent = `Loading quiz ID: ${quizId} from database...`;
+
+            try {
+                let targetUserId = userId; 
+                // Use the fixed user ID for the fixed quizzes
+                if (['programmer', 'artist', 'developer'].includes(category)) {
+                    targetUserId = HARDCODED_USER_ID;
+                }
+
+                const collectionPath = `artifacts/${appId}/users/${targetUserId}/saved_quizzes`;
+                const docRef = doc(db, collectionPath, quizId);
+                const docSnap = await getDoc(docRef); 
+
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    quizData = data.quizData; 
+                    currentMode = category;
+
+                    document.getElementById('quizTitle').textContent = `Loaded Quiz: ${category.toUpperCase()}`;
+                    document.getElementById('quizDescription').innerHTML = `
+                        Questions available: <span class="font-semibold text-indigo-600">${quizData.length}</span>. 
+                        Displaying <span id="totalQuestionCount" class="font-semibold text-indigo-600">...</span>
+                        Quiz ID: ${quizId}.
+                    `;
+                    
+                    setLoading(false);
+                    renderQuiz();
+                } else {
+                    setLoading(false);
+                    // Improved error message reflecting the fixed user path
+                    displayError(`The requested quiz (ID: ${quizId}) was not found in the database. This fixed quiz should exist under the user ID ${HARDCODED_USER_ID}. Please check your Firebase Security Rules.`);
+                }
+
+            } catch (e) {
+                setLoading(false);
+                console.error("Error fetching quiz by ID:", e);
+                displayError("Failed to load quiz from database. Check console and Firebase Rules.");
+            }
+        }
+
+
+        /**
+         * Loads the hardcoded quiz data extracted from the user's "Unity Question" document.
+         */
+        async function loadDocumentQuiz() {
+            setLoading(true, 'document');
+            document.getElementById('errorDisplay').classList.add('hidden');
+            
+            // Hardcoded quiz data from the "Unity Question" document
+let rawData = [
+    {
+        "question": "Possible release of information about work at a studio is often governed by this kind of legal contract:",
+        "options": [
+            "Civil Discourse Agreement",
+            "Constitution of Intellectual Property", 
+            "Contract of Binding",
+            "Non-Disclosure Agreement"
+        ],
+        "correctAnswer": "Non-Disclosure Agreement"
+    },
+    {
+        "question": "Score accumulation, attacking, and player health are examples of:",
+        "options": [
+            "Physics implementation",
+            "Game narrative",
+            "Audio implementation", 
+            "Game mechanics"
+        ],
+        "correctAnswer": "Game mechanics"
+    },
+    {
+        "question": "Concept art:",
+        "options": [
+            "Helps define game play and mechanics",
+            "Provides a unifying point for art direction",
+            "Is only useful in a first person game",
+            "Lays out every light and material used"
+        ],
+        "correctAnswer": "Provides a unifying point for art direction"
+    },
+    {
+        "question": "This game type often features mechanics such as card games, board games, simple arcade style games, and puzzles:",
+        "options": [
+            "Casual games",
+            "Exploration games",
+            "Installation games",
+            "Console games"
+        ],
+        "correctAnswer": "Casual games"
+    },
+    {
+        "question": "At a game studio, this person is responsible for ensuring the overall look and feel is consistent:",
+        "options": [
+            "Game designer",
+            "Level designer", 
+            "Art director",
+            "Concept artist"
+        ],
+        "correctAnswer": "Art director"
+    },
+    {
+        "question": "To ensure that certain UI canvas appear behind others you need to change:",
+        "options": [
+            "Z-Index",
+            "Render Mode",
+            "Layer Order",
+            "Sort Order"
+        ],
+        "correctAnswer": "Sort Order"
+    },
+    {
+        "question": "How many audio listeners can be in a Unity scene?",
+        "options": [
+            "Two",
+            "Unlimited",
+            "One",
+            "Zero"
+        ],
+        "correctAnswer": "One"
+    },
+    {
+        "question": "Which option begins playing the sound as soon as the GameObject loads?",
+        "options": [
+            "Play At Start",
+            "Load On Awake",
+            "Play On Awake",
+            "Start Loop"
+        ],
+        "correctAnswer": "Play On Awake"
+    },
+    {
+        "question": "The Project Window allows you to:",
+        "options": [
+            "Add components to GameObjects",
+            "Parent objects in a hierarchy",
+            "Modify the file structure of assets",
+            "Change the maximum size of textures"
+        ],
+        "correctAnswer": "Modify the file structure of assets"
+    },
+    {
+        "question": "Which window allows parenting of GameObjects?",
+        "options": [
+            "Outliner",
+            "Inspector",
+            "Project",
+            "Hierarchy"
+        ],
+        "correctAnswer": "Hierarchy"
+    },
+    {
+        "question": "Which window in the Unity Editor allows you to view, sort, and organize all of the assets for the game?",
+        "options": [
+            "Inspector Window",
+            "Scene View Window", 
+            "Hierarchy Window",
+            "Project Window"
+        ],
+        "correctAnswer": "Project Window"
+    },
+    {
+        "question": "To reconfigure the Unity Editor user interface:",
+        "options": [
+            "Control + click on the tabs and choose Reposition",
+            "Drag windows by their tabs into new locations",
+            "Open the windowprefs.cs script and enter positions",
+            "Choose Window > Window Locations from the menu"
+        ],
+        "correctAnswer": "Drag windows by their tabs into new locations"
+    },
+    {
+        "question": "A Prefab in the Unity Editor is:",
+        "options": [
+            "A modular component attached to a GameObject for scripting and animation",
+            "A special kind of GameObject that accesses Animators without scripting",
+            "A file format that allows the transfer of assets between Unity projects and scenes", 
+            "An asset type that stores a GameObject with components and properties"
+        ],
+        "correctAnswer": "An asset type that stores a GameObject with components and properties"
+    },
+    {
+        "question": "Saving a scene saves:",
+        "options": [
+            "The current placement of objects in the scene and Hierarchy",
+            "Object transforms, project settings, and undo history",
+            "All associated scenes and asset bundles in a project",
+            "The inspector settings, scripts, assets, and nested Prefab structure"
+        ],
+        "correctAnswer": "The current placement of objects in the scene and Hierarchy"
+    },
+    {
+        "question": "Unity can import this transfer file format for models having meshes, bones, skin weights, and animation:",
+        "options": [
+            "HCQ",
+            "FBX",
+            "DXF", 
+            "OBJ"
+        ],
+        "correctAnswer": "FBX"
+    },
+    {
+        "question": "Which tool allows you to manually slice an image into multiple sprites?",
+        "options": [
+            "The Bitmap Tools",
+            "The 2D Prefab Editor", 
+            "The UI Canvas",
+            "The Sprite Editor"
+        ],
+        "correctAnswer": "The Sprite Editor"
+    },
+    {
+        "question": "Which of the following statements best differentiates a Quad from a Plane?",
+        "options": [
+            "Quads can be sculpted using terrain tools",
+            "The Plane has less geometry",
+            "The Plane has internal divisions and more polygons",
+            "The Quad is double-sided"
+        ],
+        "correctAnswer": "The Plane has internal divisions and more polygons"
+    },
+    {
+        "question": "Modifying the organization of assets is done in the:",
+        "options": [
+            "Inspector Window",
+            "Scene View Window", 
+            "Hierarchy Window",
+            "Project Window"
+        ],
+        "correctAnswer": "Project Window"
+    },
+    {
+        "question": "Acceptable formats for audio are:",
+        "options": [
+            "AIFF, MP3, WAV, and Ogg",
+            "WAV, MP4, Ogg, and AVI",
+            "MP3, QuickTime, and Egg",
+            "MIDI, RCA, IFF, and MP3"
+        ],
+        "correctAnswer": "AIFF, MP3, WAV, and Ogg"
+    },
+    {
+        "question": "The Project Window toolbar allows searching of assets by:",
+        "options": [
+            "Tag and Parent",
+            "Label and Type", 
+            "Label and Color",
+            "Type and Tag"
+        ],
+        "correctAnswer": "Label and Type"
+    },
+    {
+        "question": "The script type is supported in Unity:",
+        "options": [
+            "Lua",
+            "Python",
+            "C#", 
+            "C++"
+        ],
+        "correctAnswer": "C#"
+    },
+    {
+        "question": "The breadcrumb trail in the Project Window shows:",
+        "options": [
+            "The file path of the Unity project",
+            "The file path of the selected asset",
+            "The local repository clone", 
+            "The structure of the open project"
+        ],
+        "correctAnswer": "The file path of the selected asset"
+    },
+    {
+        "question": "The Specular property of a material:",
+        "options": [
+            "Modifies the surface to show more detail than the polygons actually have",
+            "Controls the spreading of light on microsurface detail",
+            "Defines where surfaces will receive high or low amounts of indirect light",
+            "Controls the color and strength of reflection"
+        ],
+        "correctAnswer": "Controls the color and strength of reflection"
+    },
+    {
+        "question": "This material property causes polygons to appear and light as if they had more surface detail:",
+        "options": [
+            "Normal",
+            "Emission", 
+            "Smoothness",
+            "Metallic"
+        ],
+        "correctAnswer": "Normal"
+    },
+    {
+        "question": "This material property controls spreading of light on microsurface detail:",
+        "options": [
+            "Smoothness",
+            "Ambient Occlusion", 
+            "Normal",
+            "Metallic"
+        ],
+        "correctAnswer": "Smoothness"
+    },
+    {
+        "question": "This material rendering mode uses black in an alpha channel to define where a material is exactly NOT appearing:",
+        "options": [
+            "Fade",
+            "Opaque", 
+            "Cutout",
+            "Transparency"
+        ],
+        "correctAnswer": "Cutout"
+    },
+    {
+        "question": "The Albedo of a material is defined as:",
+        "options": [
+            "The blocking of bounced light by adjacent surfaces",
+            "The color of the material without any lighting data",
+            "The diffuse color of the material in general light",
+            "A raw diffuse color before any weathering is applied"
+        ],
+        "correctAnswer": "The color of the material without any lighting data"
+    },
+    {
+        "question": "In a Rigidbody component, this determines the air resistance from forces affecting the GameObject:",
+        "options": [
+            "Drag",
+            "Interpolation", 
+            "Collision Detection",
+            "Mass"
+        ],
+        "correctAnswer": "Drag"
+    },
+    {
+        "question": "To add a Box Collider to a GameObject using the top menu, choose:",
+        "options": [
+            "Physics > Collisions > Box",
+            "Objects > Physics > Box Collider",
+            "Components > Physics > Box Collider", 
+            "Assets > Create > Colliders > Box"
+        ],
+        "correctAnswer": "Components > Physics > Box Collider"
+    },
+    {
+        "question": "In a Rigidbody, this enables objects to fall:",
+        "options": [
+            "Use Gravity",
+            "Scene.gravity", 
+            "Mass.Apply",
+            "Enable Mass"
+        ],
+        "correctAnswer": "Use Gravity"
+    },
+    {
+        "question": "The role of a Raycast is to:",
+        "options": [
+            "Locate Colliders along the path of a ray",
+            "Provide a placement zone for autonomous agents",
+            "Return lighting information based on normal angle for shaders", 
+            "Create obstacles for the player GameObject"
+        ],
+        "correctAnswer": "Locate Colliders along the path of a ray"
+    },
+    {
+        "question": "Which window allows parenting of GameObjects:",
+        "options": [
+            "Hierarchy Window",
+            "Project Window", 
+            "Scene View Window",
+            "Inspector Window"
+        ],
+        "correctAnswer": "Hierarchy Window"
+    },
+    {
+        "question": "This shadow type casts shadows that approximate the natural fuzziness of real shadows due to emission area size and the bouncing of light:",
+        "options": [
+            "Blur",
+            "Area",
+            "Hard",
+            "Soft"
+        ],
+        "correctAnswer": "Soft"
+    },
+    {
+        "question": "What type of light is casting the shape on the wall and floor?",
+        "options": [
+            "Point",
+            "Directional",
+            "Spot",
+            "Skybox"
+        ],
+        "correctAnswer": "Directional"
+    },
+    {
+        "question": "Changing the intensity of a light adjusts:",
+        "options": [
+            "Color",
+            "Photometric web",
+            "Lumens",
+            "Brightness"
+        ],
+        "correctAnswer": "Brightness"
+    },
+    {
+        "question": "On a Light Component, a Culling Mask:",
+        "options": [
+            "Prioritizes the importance of the light in Deferred Rendering",
+            "Determines which layer a light is on for rendering",
+            "Shapes the light based on the alpha channel of a texture",
+            "Determines which layers are affected by the light"
+        ],
+        "correctAnswer": "Determines which layers are affected by the light"
+    },
+    {
+        "question": "This light type emits in a cone, with the light spreading out as it gets farther from the source:",
+        "options": [
+            "Area",
+            "Directional",
+            "Point",
+            "Spot"
+        ],
+        "correctAnswer": "Spot"
+    },
+    {
+        "question": "Selecting Generate Lightmap UVs in the Import Settings of a model:",
+        "options": [
+            "Forces Lightmaps to use existing UV coordinates for lighting",
+            "Creates a additional set of UV coordinates for Lightmap data",
+            "Maps the shadow maps to the UV coordinates for shading",
+            "Generates lighting data based on scene lighting inputs"
+        ],
+        "correctAnswer": "Creates a additional set of UV coordinates for Lightmap data"
+    },
+    {
+        "question": "Which kind of file do Lightmaps use to store data?",
+        "options": [
+            "EXR",
+            "JPG",
+            "TIF",
+            "TGA"
+        ],
+        "correctAnswer": "EXR"
+    },
+    {
+        "question": "To darken the ambient occlusion in baked lighting:",
+        "options": [
+            "Deepening the Dark color towards black",
+            "Increase the Max Distance",
+            "Decrease the number of GI bounces used",
+            "Increase the Ambient Occlusion amount"
+        ],
+        "correctAnswer": "Increase the Ambient Occlusion amount"
+    },
+    {
+        "question": "Lightmaps:",
+        "options": [
+            "Guide the player through the level using lighting",
+            "Store lighting data that has been pre-calculated",
+            "Determine the quality of the shadows cast in game",
+            "Assign areas of greater or lesser resolution for baking"
+        ],
+        "correctAnswer": "Store lighting data that has been pre-calculated"
+    },
+    {
+        "question": "Light Probes are used to:",
+        "options": [
+            "Determine the necessary specular value of a material",
+            "Sample reflection data at specific points in a scene",
+            "Sample baked lighting at specific points in a scene",
+            "Measure lighting intensity from a camera placement"
+        ],
+        "correctAnswer": "Sample baked lighting at specific points in a scene"
+    },
+    {
+        "question": "This view in the Animation Window shows animations as graphs:",
+        "options": [
+            "Dope Sheet",
+            "Animation component",
+            "Animator",
+            "Curve Editor"
+        ],
+        "correctAnswer": "Curve Editor"
+    },
+    {
+        "question": "This view in the Animation Window allows multiple objects' keys to be shown on horizontal tracks:",
+        "options": [
+            "Curve Editor",
+            "Animator",
+            "Dope Sheet",
+            "Animation component"
+        ],
+        "correctAnswer": "Dope Sheet"
+    },
+    {
+        "question": "The play controls shown in red indicate the Unity Editor is in this Mode:",
+        "options": [
+            "Animator Setting",
+            "Real-time Effects",
+            "Animation Record",
+            "Motion Tracking"
+        ],
+        "correctAnswer": "Animation Record"
+    },
+    {
+        "question": "Animations are stored in the Unity project as:",
+        "options": [
+            "Animation clips",
+            "Animation components",
+            "Motion files",
+            "Animator elements"
+        ],
+        "correctAnswer": "Animation clips"
+    },
+    {
+        "question": "The default transition is based on:",
+        "options": [
+            "Speed Factor",
+            "Last Key",
+            "Exit Time",
+            "End Time"
+        ],
+        "correctAnswer": "Exit Time"
+    },
+    {
+        "question": "One way to apply an Animator Controller to a GameObject is:",
+        "options": [
+            "Drag from the Project window onto the GameObject in the Inspector",
+            "Click on the GameObject in the scene while holding Alt/Option + Shift",
+            "Drag from the Inspector onto the GameObject in the Hierarchy",
+            "Click the Insert button with the GameObject selected in the scene"
+        ],
+        "correctAnswer": "Drag from the Project window onto the GameObject in the Inspector"
+    },
+    {
+        "question": "Which of the following sequences best describes how you would create a new transition:",
+        "options": [
+            "Shift + drag the animation state onto another state",
+            "Choose Create > Animation > Transition from the menu",
+            "Right-click on a state and choose Make Transition",
+            "Right-click in an open area and choose Make Transition"
+        ],
+        "correctAnswer": "Right-click on a state and choose Make Transition"
+    },
+    {
+        "question": "Define the role of the Any state:",
+        "options": [
+            "A state that applies its behaviors to all states",
+            "A limitless state accessible only by Boolean parameters being true",
+            "An animation that counterbalances any other animations",
+            "A state that allows transitions from any other state"
+        ],
+        "correctAnswer": "A state that allows transitions from any other state"
+    },
+    {
+        "question": "Animator Controllers allow you to:",
+        "options": [
+            "Create and animate controllers for a GameObject",
+            "Animate GameObjects using tangents for speed control",
+            "Arrange and maintain a set of animations for a GameObject",
+            "Trigger events on an animation timeline by proximity"
+        ],
+        "correctAnswer": "Arrange and maintain a set of animations for a GameObject"
+    },
+    {
+        "question": "To create an Animator Controller:",
+        "options": [
+            "Right-click in the Project window and choose Create > Animator Controller",
+            "Hold Shift and right-click on any open space in the Inspector",
+            "Choose Create > Controllers > Animator from the top menu",
+            "Right-click in the Hierarchy window and choose Create > Animator Controller"
+        ],
+        "correctAnswer": "Right-click in the Project window and choose Create > Animator Controller"
+    },
+    {
+        "question": "DeltaTime counts seconds between:",
+        "options": [
+            "Scenes",
+            "Frames",
+            "Draw Calls",
+            "Movements"
+        ],
+        "correctAnswer": "Frames"
+    },
+    {
+        "question": "Finish the following code to reference the gameObject's position: Vector3 pos = _________________;",
+        "options": [
+            "transform.position",
+            "transform.parent.position",
+            "gameObject.position",
+            "Vector3 (position)"
+        ],
+        "correctAnswer": "transform.position"
+    },
+    {
+        "question": "What data type must be used in the following code?___ number = 8.0f;",
+        "options": [
+            "string",
+            "factor",
+            "integer",
+            "float"
+        ],
+        "correctAnswer": "float"
+    },
+    {
+        "question": "Which type of variable is accessible to other scripts?",
+        "options": [
+            "Private",
+            "String",
+            "Integer",
+            "Public"
+        ],
+        "correctAnswer": "Public"
+    },
+    {
+        "question": "A method is used to:",
+        "options": [
+            "Define Classes",
+            "Group Instructions",
+            "Set Parameters",
+            "Delineate Variables"
+        ],
+        "correctAnswer": "Group Instructions"
+    },
+    {
+        "question": "What does Max Slope do in navigation?",
+        "options": [
+            "Sets the downward slope for Nav Mesh Agents to balance on",
+            "Defines the steepest angle that Nav Mesh Agents can walk up",
+            "Forces a change in animation to climbing dependent on angle",
+            "Forces a change in animation to climbing dependent on angle"
+        ],
+        "correctAnswer": "Defines the steepest angle that Nav Mesh Agents can walk up"
+    },
+    {
+        "question": "The process of creating a Nav Mesh from the level geometry marked as Navigation Static is called:",
+        "options": [
+            "Ordering",
+            "Building",
+            "Baking",
+            "Implementing"
+        ],
+        "correctAnswer": "Baking"
+    },
+    {
+        "question": "Obstacle avoidance is how Nav Mesh Agents:",
+        "options": [
+            "Avoid collisions with other Nav Mesh Agents and geometry",
+            "Use static obstacles to limit Nav Mesh Agents' movement",
+            "Use scripted behavior of Nav Mesh Agents to duck and jump",
+            "Fold the Nav Mesh to deter agents' movements"
+        ],
+        "correctAnswer": "Avoid collisions with other Nav Mesh Agents and geometry"
+    },
+    {
+        "question": "Which of the following best describes the function of a Nav Mesh?",
+        "options": [
+            "Defines walkable surfaces for Nav Mesh Agents",
+            "Establishes player-restricted areas",
+            "Establishes player-restricted areas",
+            "Culls Nav Mesh Agent visibility by line of sight"
+        ],
+        "correctAnswer": "Defines walkable surfaces for Nav Mesh Agents"
+    },
+    {
+        "question": "Which method does not return a value?",
+        "options": [
+            "void Start()",
+            "bool IsAlive()",
+            "public class Player()",
+            "public class Player()"
+        ],
+        "correctAnswer": "void Start()"
+    },
+    {
+        "question": "Which of the following sequences best describes how you would create an Animator component on an object?",
+        "options": [
+            "Click on the Components button and choose Layouts > Animator",
+            "Shift-click on an object in the scene and choose Animations > Animator",
+            "Click on the Components button and choose Animations > Animator Controller",
+            "Click on the Add Components button and choose Miscellaneous > Animator"
+        ],
+        "correctAnswer": "Click on the Add Components button and choose Miscellaneous > Animator"
+    },
+    {
+        "question": "In order to define new virtual input axes, you need to configure the key mapping in the:",
+        "options": [
+            "User input script",
+            "Inspector",
+            "Keyboard Values",
+            "Input Manager"
+        ],
+        "correctAnswer": "Input Manager"
+    },
+    {
+        "question": "The Awake method is called when:",
+        "options": [
+            "A script is loaded",
+            "Meshes are loaded",
+            "An animation starts",
+            "The physics are calculated"
+        ],
+        "correctAnswer": "A script is loaded"
+    },
+    {
+        "question": "When enabled, which Collider property allows GameObjects to pass through the Collider?",
+        "options": [
+            "Use Gravity",
+            "Non-Physic material",
+            "Is Trigger",
+            "Is Kinematic"
+        ],
+        "correctAnswer": "Is Trigger"
+    },
+    {
+        "question": "In game design, non-player characters are:",
+        "options": [
+            "Computer-controlled",
+            "Only in role playing games",
+            "Controlled by other players",
+            "Always enemies"
+        ],
+        "correctAnswer": "Computer-controlled"
+    },
+    {
+        "question": "A floating point variable is distinguished by what letter immediately following the number?",
+        "options": [
+            "v",
+            "x",
+            "f",
+            "h"
+        ],
+        "correctAnswer": "f"
+    },
+    {
+        "question": "Dragging an Animator Controller onto a GameObject in the Inspector creates an:",
+        "options": [
+            "Animator component",
+            "Instanced Prefab nest",
+            "Animation clip instance",
+            "Animation component"
+        ],
+        "correctAnswer": "Animator component"
+    },
+    {
+        "question": "Besides Exit Time, transition conditions can be driven by:",
+        "options": [
+            "Interactions",
+            "Parameters",
+            "Animators",
+            "Conditionality"
+        ],
+        "correctAnswer": "Parameters"
+    },
+    {
+        "question": "In a particle system of smoke, which property is used to change from dense black, to semi-transparent gray, and finally white?",
+        "options": [
+            "Change Color by Duration",
+            "Color Over Lifetime",
+            "Inherit Light From Parent",
+            "Random between Constants"
+        ],
+        "correctAnswer": "Color Over Lifetime"
+    },
+    {
+        "question": "Circle, Edge, Box, and Cone are examples of:",
+        "options": [
+            "Light Cookies",
+            "Camera Framing",
+            "Emitter Shapes",
+            "Mesh Primitives"
+        ],
+        "correctAnswer": "Emitter Shapes"
+    },
+    {
+        "question": "The Shape section of a particle system defines the geometry of the:",
+        "options": [
+            "Forces",
+            "Player Field",
+            "Emitter",
+            "Particles"
+        ],
+        "correctAnswer": "Emitter"
+    },
+    {
+        "question": "Which Emit From option allows particles to originate from anywhere within the emitter geometry?",
+        "options": [
+            "Volume",
+            "Base Shell",
+            "Volume Shell",
+            "Base"
+        ],
+        "correctAnswer": "Volume"
+    },
+    {
+        "question": "To create an effect showing multiple particles spawning from the originals, you would use a:",
+        "options": [
+            "Sub-emitter",
+            "Particle splitter",
+            "Child-branch",
+            "Cloned system"
+        ],
+        "correctAnswer": "Sub-emitter"
+    },
+    {
+        "question": "What is the effect applied to the Soundeffects group called?",
+        "options": [
+            "Snapshot",
+            "Attenuation",
+            "Flange",
+            "Lowpass"
+        ],
+        "correctAnswer": "Flange"
+    },
+    {
+        "question": "To simulate the echoing and distortion of a type of sound environment such as cave, arena, or forest, which of the following audio components would be the best option to use?",
+        "options": [
+            "Flange Filters",
+            "Soundscapes",
+            "Reverb Zones",
+            "Audio Listeners"
+        ],
+        "correctAnswer": "Reverb Zones"
+    },
+    {
+        "question": "Which option begins playing the sound as soon as the GameObject loads?",
+        "options": [
+            "Play on Awake",
+            "Begin on Start",
+            "Sound.PlayOnEnter",
+            "Wake on Opening"
+        ],
+        "correctAnswer": "Play on Awake"
+    },
+    {
+        "question": "To make a sound play over and over, which of the following needs to be checked?",
+        "options": [
+            "Replay",
+            "Continuous",
+            "Looping",
+            "Repeating"
+        ],
+        "correctAnswer": "Looping"
+    },
+    {
+        "question": "To modify the volume of an audio clip, the clip must be applied to:",
+        "options": [
+            "The amplitude of an audio mixer",
+            "An audio source component",
+            "An audio clip modifier",
+            "A sound properties component"
+        ],
+        "correctAnswer": "An audio source component"
+    },
+    {
+        "question": "Which method gets a reference to a component on a GameObject?",
+        "options": [
+            "GetComponent",
+            "FindComponent",
+            "GameObject.Find",
+            "Component.reference"
+        ],
+        "correctAnswer": "GetComponent"
+    },
+    {
+        "question": "In this line of code, which of these does not set playerPosition to 0,0,0? Vector3 playerPosition = _________;",
+        "options": [
+            "Vector3.zero",
+            "Vector3 (0)",
+            "new Vector3 (0,0,0)",
+            "new Vector3.default"
+        ],
+        "correctAnswer": "Vector3 (0)"
+    },
+    {
+        "question": "A __________ executes a set of instructions and can either return a value or not return a value.",
+        "options": [
+            "Method",
+            "Subroutine",
+            "Variable",
+            "Pragma"
+        ],
+        "correctAnswer": "Method"
+    },
+    {
+        "question": "This Transition Parameter type is reset by the controller when consumed by a transition:",
+        "options": [
+            "Float",
+            "Integer",
+            "Bool",
+            "Trigger"
+        ],
+        "correctAnswer": "Trigger"
+    },
+    {
+        "question": "To create this placeholder for animation in the Animator Window, you would first right-click in any open area. Your next action would then be to choose:",
+        "options": [
+            "Make > New",
+            "New from Blend Tree",
+            "Create > Empty",
+            "Create > State"
+        ],
+        "correctAnswer": "Create > Empty"
+    },
+    {
+        "question": "In which UI component would you use a Sprite?",
+        "options": [
+            "Raw Image",
+            "Texture",
+            "Image",
+            "Button"
+        ],
+        "correctAnswer": "Image"
+    },
+    {
+        "question": "What method is called when this button object is clicked?",
+        "options": [
+            "Runtime Only",
+            "AudioSource.Play",
+            "Button.Play",
+            "Player.OnClick"
+        ],
+        "correctAnswer": "AudioSource.Play"
+    },
+    {
+        "question": "In the image shown, what has caused the change in property names of the Rect Transform?",
+        "options": [
+            "Moving the pivot",
+            "Splitting the anchor",
+            "Choosing Screen Space",
+            "Adding a slider"
+        ],
+        "correctAnswer": "Splitting the anchor"
+    },
+    {
+        "question": "Some of the available options for the Transition property of a button are:",
+        "options": [
+            "Sprite Swap and Color Tint",
+            "Sprite Tint and Animator",
+            "Animator and Animation",
+            "Color Over Life and None"
+        ],
+        "correctAnswer": "Sprite Swap and Color Tint"
+    },
+    {
+        "question": "Which component allows the canvas to resize with a display?",
+        "options": [
+            "Event System",
+            "Canvas Transform",
+            "Rect Transform",
+            "Canvas Scaler"
+        ],
+        "correctAnswer": "Canvas Scaler"
+    },
+    {
+        "question": "Android, web, and iOS are some of the supported platforms for:",
+        "options": [
+            "Performance Monitoring",
+            "Rapid Sync",
+            "Unity Cloud Build",
+            "Unity Ads"
+        ],
+        "correctAnswer": "Unity Cloud Build"
+    },
+    {
+        "question": "Differentiate between Rewarded and Simple Ads:",
+        "options": [
+            "Rewarded Ads provide more money per click",
+            "Simple Ads are unlimited",
+            "Rewarded Ads cannot be skipped by default",
+            "Simple Ads are static images"
+        ],
+        "correctAnswer": "Rewarded Ads cannot be skipped by default"
+    },
+    {
+        "question": "Which identifier is used to link a project data feed to Unity Analytics?",
+        "options": [
+            "Scene Name",
+            "Project Name",
+            "ID Certificate",
+            "Project ID"
+        ],
+        "correctAnswer": "Project ID"
+    },
+    {
+        "question": "In order to utilize Unity Cloud Build, your project must be synced to:",
+        "options": [
+            "A source control repository",
+            "Unity Asset Server",
+            "An external hard drive",
+            "Network attached storage"
+        ],
+        "correctAnswer": "A source control repository"
+    },
+    {
+        "question": "An image for an Image component must be imported as this type:",
+        "options": [
+            "PNG",
+            "Texture",
+            "Alpha",
+            "Sprite"
+        ],
+        "correctAnswer": "Sprite"
+    },
+    {
+        "question": "Possible release of information about work at a studio is often governed by this kind of legal contract:",
+        "options": [
+            "Civil Discourse Agreement",
+            "Constitution of Intellectual Property", 
+            "Contract of Binding",
+            "Non-Disclosure Agreement"
+        ],
+        "correctAnswer": "Non-Disclosure Agreement"
+    },
+    {
+        "question": "Score accumulation, attacking, and player health are examples of:",
+        "options": [
+            "Physics implementation",
+            "Game narrative",
+            "Audio implementation", 
+            "Game mechanics"
+        ],
+        "correctAnswer": "Game mechanics"
+    },
+    {
+        "question": "Concept art:",
+        "options": [
+            "Helps define game play and mechanics",
+            "Provides a unifying point for art direction",
+            "Is only useful in a first person game",
+            "Lays out every light and material used"
+        ],
+        "correctAnswer": "Provides a unifying point for art direction"
+    },
+    {
+        "question": "This game type often features mechanics such as card games, board games, simple arcade style games, and puzzles:",
+        "options": [
+            "Casual games",
+            "Exploration games",
+            "Installation games",
+            "Console games"
+        ],
+        "correctAnswer": "Casual games"
+    },
+    {
+        "question": "At a game studio, this person is responsible for ensuring the overall look and feel is consistent:",
+        "options": [
+            "Game designer",
+            "Level designer", 
+            "Art director",
+            "Concept artist"
+        ],
+        "correctAnswer": "Art director"
+    },
+    {
+        "question": "The Project Window allows you to:",
+        "options": [
+            "Add components to GameObjects",
+            "Parent objects in a hierarchy",
+            "Modify the file structure of assets",
+            "Change the maximum size of textures"
+        ],
+        "correctAnswer": "Modify the file structure of assets"
+    },
+    {
+        "question": "Which window allows parenting of GameObjects?",
+        "options": [
+            "Outliner",
+            "Inspector",
+            "Project",
+            "Hierarchy"
+        ],
+        "correctAnswer": "Hierarchy"
+    },
+    {
+        "question": "Which window in the Unity Editor allows you to view, sort, and organize all of the assets for the game?",
+        "options": [
+            "Inspector Window",
+            "Scene View Window", 
+            "Hierarchy Window",
+            "Project Window"
+        ],
+        "correctAnswer": "Project Window"
+    },
+    {
+        "question": "To reconfigure the Unity Editor user interface:",
+        "options": [
+            "Control + click on the tabs and choose Reposition",
+            "Drag windows by their tabs into new locations",
+            "Open the windowprefs.cs script and enter positions",
+            "Choose Window > Window Locations from the menu"
+        ],
+        "correctAnswer": "Drag windows by their tabs into new locations"
+    },
+    {
+        "question": "A Prefab in the Unity Editor is:",
+        "options": [
+            "A modular component attached to a GameObject for scripting and animation",
+            "A special kind of GameObject that accesses Animators without scripting",
+            "A file format that allows the transfer of assets between Unity projects and scenes", 
+            "An asset type that stores a GameObject with components and properties"
+        ],
+        "correctAnswer": "An asset type that stores a GameObject with components and properties"
+    },
+    {
+        "question": "Saving a scene saves:",
+        "options": [
+            "The current placement of objects in the scene and Hierarchy",
+            "Object transforms, project settings, and undo history",
+            "All associated scenes and asset bundles in a project",
+            "The inspector settings, scripts, assets, and nested Prefab structure"
+        ],
+        "correctAnswer": "The current placement of objects in the scene and Hierarchy"
+    },
+    {
+        "question": "Unity can import this transfer file format for models having meshes, bones, skin weights, and animation:",
+        "options": [
+            "HCQ",
+            "FBX",
+            "DXF", 
+            "OBJ"
+        ],
+        "correctAnswer": "FBX"
+    },
+    {
+        "question": "Which tool allows you to manually slice an image into multiple sprites?",
+        "options": [
+            "The Bitmap Tools",
+            "The 2D Prefab Editor", 
+            "The UI Canvas",
+            "The Sprite Editor"
+        ],
+        "correctAnswer": "The Sprite Editor"
+    },
+    {
+        "question": "Which of the following statements best differentiates a Quad from a Plane?",
+        "options": [
+            "Quads can be sculpted using terrain tools",
+            "The Plane has less geometry",
+            "The Plane has internal divisions and more polygons",
+            "The Quad is double-sided"
+        ],
+        "correctAnswer": "The Plane has internal divisions and more polygons"
+    },
+    {
+        "question": "Modifying the organization of assets is done in the:",
+        "options": [
+            "Inspector Window",
+            "Scene View Window", 
+            "Hierarchy Window",
+            "Project Window"
+        ],
+        "correctAnswer": "Project Window"
+    },
+    {
+        "question": "Acceptable formats for audio are:",
+        "options": [
+            "AIFF, MP3, WAV, and Ogg",
+            "WAV, MP4, Ogg, and AVI",
+            "MP3, QuickTime, and Egg",
+            "MIDI, RCA, IFF, and MP3"
+        ],
+        "correctAnswer": "AIFF, MP3, WAV, and Ogg"
+    },
+    {
+        "question": "The Project Window toolbar allows searching of assets by:",
+        "options": [
+            "Tag and Parent",
+            "Label and Type", 
+            "Label and Color",
+            "Type and Tag"
+        ],
+        "correctAnswer": "Label and Type"
+    },
+    {
+        "question": "The script type is supported in Unity:",
+        "options": [
+            "Lua",
+            "Python",
+            "C#", 
+            "C++"
+        ],
+        "correctAnswer": "C#"
+    },
+    {
+        "question": "The breadcrumb trail in the Project Window shows:",
+        "options": [
+            "The file path of the Unity project",
+            "The file path of the selected asset",
+            "The local repository clone", 
+            "The structure of the open project"
+        ],
+        "correctAnswer": "The file path of the selected asset"
+    },
+    {
+        "question": "The Specular property of a material:",
+        "options": [
+            "Modifies the surface to show more detail than the polygons actually have",
+            "Controls the spreading of light on microsurface detail",
+            "Defines where surfaces will receive high or low amounts of indirect light",
+            "Controls the color and strength of reflection"
+        ],
+        "correctAnswer": "Controls the color and strength of reflection"
+    },
+    {
+        "question": "This material property causes polygons to appear and light as if they had more surface detail:",
+        "options": [
+            "Normal",
+            "Emission", 
+            "Smoothness",
+            "Metallic"
+        ],
+        "correctAnswer": "Normal"
+    },
+    {
+        "question": "This material property controls spreading of light on microsurface detail:",
+        "options": [
+            "Smoothness",
+            "Ambient Occlusion", 
+            "Normal",
+            "Metallic"
+        ],
+        "correctAnswer": "Smoothness"
+    },
+    {
+        "question": "This material rendering mode uses black in an alpha channel to define where a material is exactly NOT appearing:",
+        "options": [
+            "Fade",
+            "Opaque", 
+            "Cutout",
+            "Transparency"
+        ],
+        "correctAnswer": "Cutout"
+    },
+    {
+        "question": "The Albedo of a material is defined as:",
+        "options": [
+            "The blocking of bounced light by adjacent surfaces",
+            "The color of the material without any lighting data",
+            "The diffuse color of the material in general light",
+            "A raw diffuse color before any weathering is applied"
+        ],
+        "correctAnswer": "The color of the material without any lighting data"
+    },
+    {
+        "question": "In a Rigidbody component, this determines the air resistance from forces affecting the GameObject:",
+        "options": [
+            "Drag",
+            "Interpolation", 
+            "Collision Detection",
+            "Mass"
+        ],
+        "correctAnswer": "Drag"
+    },
+    {
+        "question": "To add a Box Collider to a GameObject using the top menu, choose:",
+        "options": [
+            "Physics > Collisions > Box",
+            "Objects > Physics > Box Collider",
+            "Components > Physics > Box Collider", 
+            "Assets > Create > Colliders > Box"
+        ],
+        "correctAnswer": "Components > Physics > Box Collider"
+    },
+    {
+        "question": "In a Rigidbody, this enables objects to fall:",
+        "options": [
+            "Use Gravity",
+            "Scene.gravity", 
+            "Mass.Apply",
+            "Enable Mass"
+        ],
+        "correctAnswer": "Use Gravity"
+    },
+    {
+        "question": "The role of a Raycast is to:",
+        "options": [
+            "Locate Colliders along the path of a ray",
+            "Provide a placement zone for autonomous agents",
+            "Return lighting information based on normal angle for shaders", 
+            "Create obstacles for the player GameObject"
+        ],
+        "correctAnswer": "Locate Colliders along the path of a ray"
+    },
+    {
+        "question": "Which window allows parenting of GameObjects:",
+        "options": [
+            "Hierarchy Window",
+            "Project Window", 
+            "Scene View Window",
+            "Inspector Window"
+        ],
+        "correctAnswer": "Hierarchy Window"
+    }
+];
+            
+            quizData = rawData.filter(q => q.question && q.options.length > 0 && q.correctAnswer);
+            
+            document.getElementById('quizTitle').textContent = 'Quiz from "Unity Question" Document';
+            document.getElementById('quizDescription').innerHTML = `
+                Questions available: <span class="font-semibold text-indigo-600">${quizData.length}</span>. 
+                Displaying <span id="totalQuestionCount" class="font-semibold text-indigo-600">...</span>
+                (Questions are randomized).
+            `;
+
+            renderQuiz();
+            setLoading(false);
+        }
+
+        /**
+         * Shuffles an array using the Fisher-Yates algorithm.
+         */
+        function shuffleArray(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+            return array;
+        }
+
+
+        /**
+         * Attempts to load the hardcoded saved quiz ID for a specific category.
+         */
+        async function loadCategoryQuiz(category) {
+            hideAllContent(); // Ensure previous quiz is hidden
+            document.getElementById('quizContainer').classList.remove('hidden'); // Show quiz container area
+
+            let quizIdToLoad;
+            
+            // Determine the hardcoded ID based on the category
+            switch(category) {
+                case 'programmer':
+                    quizIdToLoad = PROGRAMMER_QUIZ_ID;
+                    break;
+                case 'artist':
+                    quizIdToLoad = ARTIST_QUIZ_ID;
+                    break;
+                case 'developer':
+                    quizIdToLoad = DEVELOPER_QUIZ_ID;
+                    break;
+                default:
+                    displayError(`Invalid category: ${category}`);
+                    return;
+            }
+
+            // Immediately attempt to load using the known ID
+            await loadQuizFromDatabase(quizIdToLoad, category);
+        }
+
+
+        /**
+         * Hides all content containers.
+         */
+        function hideAllContent() {
+            document.getElementById('quizContainer').classList.add('hidden');
+            document.getElementById('savedQuizzesList').classList.add('hidden');
+            document.getElementById('submissionContainer').classList.add('hidden');
+            document.getElementById('resultDisplay').classList.add('hidden');
+            document.getElementById('errorDisplay').classList.add('hidden');
+            quizData = []; // Clear current quiz data
+            // Reset question count display
+            document.getElementById('totalQuestionCount').textContent = 'N/A';
+        }
+
+
+        /**
+         * Updates the UI to show/hide the loading state.
+         */
+        function setLoading(isLoading, mode = '') {
+            const modeButtons = document.querySelectorAll('.mode-button');
+            const loadingIndicator = document.getElementById('loadingIndicator');
+            const loadingText = document.getElementById('loadingText');
+
+            if (isLoading) {
+                modeButtons.forEach(btn => btn.disabled = true);
+                let text = 'Loading...';
+                
+                if (mode === 'document') {
+                    text = 'Loading document questions...';
+                } else if (mode === 'loading') {
+                    // Custom text set by the calling function (e.g., loading from DB)
+                } else {
+                    text = `Loading ${mode} data...`;
+                }
+
+                loadingText.textContent = text;
+                loadingIndicator.classList.remove('hidden');
+            } else {
+                modeButtons.forEach(btn => btn.disabled = false);
+                loadingIndicator.classList.add('hidden');
+            }
+        }
+
+        /**
+         * Displays an error message to the user.
+         */
+        function displayError(message) {
+            const errorDisplay = document.getElementById('errorDisplay');
+            errorDisplay.innerHTML = `<p class="font-semibold">Error:</p><p>${message}</p>`;
+            errorDisplay.classList.remove('hidden');
+        }
+
+        /**
+         * Renders the quiz questions to the UI.
+         */
+        function renderQuiz() {
+            const container = document.getElementById('quizContainer');
+            const submitContainer = document.getElementById('submissionContainer');
+            container.innerHTML = '';
+            userAnswers = {};
+
+            if (quizData.length === 0) {
+                submitContainer.classList.add('hidden');
+                document.getElementById('quizContainer').classList.add('hidden');
+                displayError("Quiz data is empty. Cannot start quiz.");
+                return;
+            }
+
+            // Get user-defined limit, defaulting to 50 or the total available count
+            const inputElement = document.getElementById('questionCountInput');
+            let displayLimit = parseInt(inputElement.value) || 50;
+
+            // Ensure limit does not exceed total available questions
+            const totalAvailable = quizData.length;
+            if (displayLimit > totalAvailable) {
+                displayLimit = totalAvailable;
+            } else if (displayLimit < 1) {
+                displayLimit = 1;
+            }
+
+            // --- Update Display Count ---
+            document.getElementById('totalQuestionCount').textContent = `${displayLimit} / ${totalAvailable} questions`;
+
+            
+            // --- CORE RANDOMIZATION AND SLICING STEP ---
+            // 1. Shuffle all available questions
+            const shuffledAllQuizData = shuffleArray([...quizData]); 
+            // 2. Select the top N based on the user's limit
+            const questionsToDisplay = shuffledAllQuizData.slice(0, displayLimit);
+            // -------------------------------------------
+            
+            // Show necessary containers if quizData is present
+            document.getElementById('quizContainer').classList.remove('hidden');
+            submitContainer.classList.remove('hidden');
+
+
+            questionsToDisplay.forEach((q, index) => {
+                const qNum = index + 1;
+                // Shuffle options to prevent correct answer from always being in the same spot
+                const shuffledOptions = shuffleArray([...q.options]);
+
+                const questionHtml = `
+                    <div id="q-${qNum}" class="question-card p-6 border border-indigo-200 rounded-lg bg-indigo-500 text-white shadow-lg">
+                        <p class="text-xl font-bold mb-4">Question ${qNum}: ${q.question}</p>
+                        <div id="options-${qNum}" class="space-y-3">
+                            ${shuffledOptions.map(option => `
+                                <label class="flex items-center p-3 border border-gray-300 rounded-lg cursor-pointer bg-white text-gray-800 hover:bg-indigo-100 transition duration-150 ease-in-out">
+                                    <input type="radio" name="question-${qNum}" value="${option}" data-q-index="${index}" onclick="handleAnswerChange(${index}, '${option.replace(/'/g, "\\'")}')" class="h-5 w-5 text-indigo-600 focus:ring-indigo-500">
+                                    <span class="ml-3 font-medium">${option}</span>
+                                </label>
+                            `).join('')}
+                        </div>
+                        <div id="feedback-${qNum}" class="mt-4 text-sm font-semibold hidden text-gray-800"></div>
+                    </div>
+                `;
+                container.insertAdjacentHTML('beforeend', questionHtml);
+            });
+
+            document.getElementById('resultDisplay').classList.add('hidden');
+        }
+
+        /**
+         * Handles the selection of an answer by the user.
+         */
+        window.handleAnswerChange = function(qIndex, selectedOption) {
+            userAnswers[qIndex] = selectedOption;
+        }
+
+        /**
+         * Wrapper function to switch between quiz modes.
+         * @param {string} mode 'document', 'developer', 'artist', 'programmer', or 'saved'
+         */
+        window.loadQuiz = function(mode) {
+            const modes = ['document', 'developer', 'artist', 'programmer']; // Removed 'saved' from modes list
+            const quizTitle = document.getElementById('quizTitle');
+            
+            hideAllContent();
+
+            // Set button active state
+            modes.forEach(m => {
+                document.getElementById(`mode-${m}`).classList.toggle('active', mode === m);
+            });
+            
+            currentMode = mode;
+
+            // Update header, mode, and load quiz
+            if (mode === 'document') {
+                quizTitle.textContent = 'Quiz from "Unity Question" Document';
+                loadDocumentQuiz(); // This calls renderQuiz inside
+            } 
+            // Database Reader Modes
+            else {
+                // If it's one of the three database roles, load via hardcoded ID
+                quizTitle.textContent = `Database Quiz: ${mode.toUpperCase()} Role`;
+                loadCategoryQuiz(mode);
+            }
+        }
+
+
+        /**
+         * Calculates the score and updates the UI with results and feedback.
+         */
+        window.submitQuiz = function() {
+            let correctCount = 0;
+            let incorrectCount = 0;
+            
+            const submitBtn = document.getElementById('submitBtn');
+            submitBtn.disabled = true;
+            submitBtn.classList.add('opacity-50', 'cursor-not-allowed');
+
+            // NOTE: We must iterate over the displayed questions.
+            const displayedQuestions = Array.from(document.getElementById('quizContainer').children);
+
+            displayedQuestions.forEach((qElement, index) => {
+                const qNum = index + 1;
+                
+                // Get the text content of the selected radio button for this question group
+                const radioGroupName = `question-${qNum}`;
+                const selectedRadio = document.querySelector(`input[name="${radioGroupName}"]:checked`);
+                const userAnswer = selectedRadio ? selectedRadio.value : null;
+
+                // --- Safe Check to find the original question data ---
+                const questionText = qElement.querySelector('.text-xl.font-bold.mb-4').textContent.replace(`Question ${qNum}: `, '').trim();
+                const originalQuestion = quizData.find(q => q.question.trim() === questionText);
+                
+                if (!originalQuestion) return; 
+
+                const isCorrect = userAnswer === originalQuestion.correctAnswer;
+                
+                const questionCard = qElement;
+                const feedbackDiv = qElement.querySelector('[id^="feedback-"]');
+                const optionsDiv = qElement.querySelector('[id^="options-"]');
+
+                // Remove previous feedback classes
+                questionCard.classList.remove('bg-green-100', 'bg-red-100', 'border-green-400', 'border-red-400', 'bg-indigo-500', 'text-white');
+                
+                // Add new feedback to the card
+                if (isCorrect) {
+                    correctCount++;
+                    questionCard.classList.add('bg-green-100', 'border-green-400');
+                    feedbackDiv.innerHTML = '<span class="text-green-700">✅ Correct!</span>';
+                } else {
+                    incorrectCount++;
+                    questionCard.classList.add('bg-red-100', 'border-red-400');
+                    feedbackDiv.innerHTML = `<span class="text-red-700">❌ Incorrect.</span> The correct answer was: <span class="text-green-700 font-bold">${originalQuestion.correctAnswer}</span>`;
+                }
+                
+                feedbackDiv.classList.remove('hidden');
+
+                // Disable all radio buttons and highlight the correct answer
+                optionsDiv.querySelectorAll('input[type="radio"]').forEach(radio => {
+                    radio.disabled = true;
+                    const label = radio.closest('label');
+                    
+                    if (radio.value === originalQuestion.correctAnswer) {
+                        // Highlight the correct answer in green
+                        label.classList.add('bg-green-200', 'border-green-500');
+                        label.classList.remove('hover:bg-indigo-100');
+                    } else if (radio.checked) {
+                        // Highlight the user's incorrect answer in red
+                        label.classList.add('bg-red-200', 'border-red-500', 'line-through');
+                        label.classList.remove('hover:bg-indigo-100');
+                    }
+                });
+            });
+
+
+            // Display overall score
+            const totalQuestions = displayedQuestions.length; // Use the count of displayed questions for the score
+            const percentage = totalQuestions > 0 ? ((correctCount / totalQuestions) * 100).toFixed(1) : 0;
+
+            const scoreHtml = `
+                <p class="text-3xl font-extrabold text-indigo-700">${percentage}% Score</p>
+                <p class="text-xl text-green-600 font-semibold">Correct Answers: ${correctCount}</p>
+                <p class="text-xl text-red-600 font-semibold">Incorrect Answers: ${incorrectCount}</p>
+                <p class="text-gray-500">Total Questions: ${totalQuestions}</p>
+            `;
+
+            document.getElementById('scoreDetails').innerHTML = scoreHtml;
+            document.getElementById('resultDisplay').classList.remove('hidden');
+        }
+
+        // Initialize on load
+        document.addEventListener('DOMContentLoaded', () => {
+            initFirebase(); 
+            // NOTE: Initial load is handled inside initFirebase after auth completes.
+        });
+    </script>
+
+</body>
+</html>
